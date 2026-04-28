@@ -1,3 +1,17 @@
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+
+# Clean URL: /api/chart?symbol=AAPL&range=1y
+# Routes through to the yahoo-chart serverless function (status=200 means
+# rewrite, not redirect — the URL bar still shows /api/chart).
+[[redirects]]
+  from = "/api/chart"
+  to   = "/.netlify/functions/yahoo-chart"
+  status = 200
+
 [[headers]]
   for = "/data/*"
   [headers.values]

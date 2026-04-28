@@ -476,7 +476,7 @@
             <a href="https://observation-deck.netlify.app/">Observation Deck</a> &nbsp;|&nbsp;
             <a href="guide.html">Guide</a> &nbsp;|&nbsp;
             <a href="https://github.com/00xJS/chronoticker">GitHub</a><br>
-            Live data via the public <a href="https://finance.yahoo.com/" target="_blank" rel="noopener">Yahoo Finance</a> chart API
+            Live data via the public <a href="https://finance.yahoo.com/" target="_blank" rel="noopener">Yahoo Finance</a> chart API, served through a Netlify serverless proxy
         </footer>
     </div>
 
@@ -586,11 +586,18 @@ document.getElementById('presetReset').addEventListener('click', () => {
 });
 
 async function fetchYahooSeries(symbol, range) {
-    const path = `v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d&includeAdjustedClose=true`;
-    const direct = `https://query1.finance.yahoo.com/${path}`;
-    const proxied = `https://corsproxy.io/?${encodeURIComponent(direct)}`;
+    // Try sources in order of reliability:
+    //   1. Our own Netlify serverless proxy (/api/chart) — most reliable in production.
+    //      Same-origin so no CORS, and Yahoo trusts Netlify's edge IPs.
+    //   2. Direct Yahoo — works in local dev when Yahoo's CORS happens to be permissive.
+    //   3. Public corsproxy.io — last-resort fallback for environments where (1) isn't available.
+    const path     = `v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&includeAdjustedClose=true`;
+    const ownProxy = `/api/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`;
+    const direct   = `https://query1.finance.yahoo.com/${path}`;
+    const proxied  = `https://corsproxy.io/?${encodeURIComponent(direct)}`;
+
     const errors = [];
-    for (const url of [direct, proxied]) {
+    for (const url of [ownProxy, direct, proxied]) {
         try {
             const res = await fetch(url);
             if (!res.ok) { errors.push(`HTTP ${res.status}`); continue; }

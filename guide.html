@@ -344,8 +344,8 @@
             <li><strong>Survivorship bias.</strong> The available stocks are today's winners. A 2010 backtest would have looked different if you'd been picking from 2010's hot stocks.</li>
         </ul>
 
-        <div class="callout warn">
-            <strong>Heads up — data source quirk:</strong> This tool uses Yahoo Finance's public chart endpoint (no API key required). Yahoo occasionally rate-limits or rotates CORS headers, in which case the tool falls back through a public CORS proxy. If a backtest fails with a network error, wait a few seconds and try again.
+        <div class="callout">
+            <strong>How the data gets here:</strong> Chronoticker uses Yahoo Finance's public chart endpoint (no API key required) and routes requests through a small Netlify serverless function running on Netlify's edge. This sidesteps the CORS and rate-limiting problems that affect direct browser calls and public CORS proxies, and keeps the project fully keyless. If a request occasionally fails (Yahoo can still rate-limit), wait a few seconds and try again.
         </div>
 
         <p class="callout"><strong>Educational use only.</strong> Backtests are a thinking tool, not a prediction. Past performance does not guarantee future results. Nothing here is financial advice.</p>
