@@ -11,12 +11,10 @@ on:
 permissions:
   # Required to commit refreshed JSON back to the repo.
   contents: write
-
-env:
-  # Opt actions/checkout + actions/setup-node into the Node 24 runtime
-  # ahead of GitHub's June 2026 forced cutover. Silences deprecation
-  # warnings; no behavioral change.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# Note: actions/checkout@v4 and actions/setup-node@v4 emit a Node 20
+# deprecation warning until their maintainers ship Node 24 builds.
+# This is a soft warning — runs still succeed. Re-evaluate the env var
+# story closer to GitHub's June 2026 forced cutover.
 
 jobs:
   refresh:
