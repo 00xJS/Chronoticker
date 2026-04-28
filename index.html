@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chronoticker — Stock Portfolio Backtester</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary:      #1b1f4b;
+            --primary-dark: #0f1235;
+            --accent:       #e8792b;
+            --accent-2:     #c23e8c;
+            --green:        #1a9e4a;
+            --red:          #d32f2f;
+            --border:       #d4d0e0;
+            --bg:           #f4f5f7;
+            --card:         #ffffff;
+            --text:         #222;
+            --muted:        #666;
+            --focus-ring:   rgba(232,121,43,0.35);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: auto;
+            padding: 28px 32px;
+            background: var(--card);
+            box-shadow: 0 2px 20px rgba(0,0,0,0.09);
+            border-radius: 14px;
+        }
+
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 6px;
+        }
+
+        .top-bar .spacer { flex: 1; }
+
+        .help-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: #eef0f5;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .help-link:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+        h1 {
+            color: var(--primary);
+            text-align: center;
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: -0.5px;
+            flex: 0 0 auto;
+        }
+
+        h2 {
+            color: var(--text);
+            font-size: 1.15rem;
+            margin: 28px 0 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--accent);
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: var(--muted);
+            margin: 0 0 14px;
+            font-size: 14px;
+        }
+
+        .first-time {
+            background: #fff7ef;
+            border: 1px solid #f3d6b3;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin: 8px 0 16px;
+            font-size: 13.5px;
+            color: #6e4a17;
+        }
+        .first-time strong { color: var(--accent); }
+        .first-time a      { color: var(--accent); font-weight: 600; }
+
+        .data-status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 9px 16px;
+            border-radius: 8px;
+            margin: 12px 0 22px;
+            font-size: 13.5px;
+            min-height: 40px;
+            background: #eef0f5;
+            border: 1px solid var(--border);
+            color: var(--muted);
+        }
+        .data-status.ok    { background: #e7f6ec; border-color: #c8e7d2; color: #1a6b35; }
+        .data-status.error { background: #fdecec; border-color: #f5c6c6; color: #a82424; }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px 18px;
+        }
+
+        .field { display: flex; flex-direction: column; gap: 4px; }
+
+        label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        input, select {
+            padding: 8px 10px;
+            font-size: 14px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: #fff;
+            font-family: inherit;
+        }
+
+        input:focus, select:focus {
+            outline: 2px solid var(--focus-ring);
+            outline-offset: 1px;
+            border-color: var(--accent);
+        }
+
+        .allocations { margin-top: 14px; }
+
+        .alloc-row {
+            display: grid;
+            grid-template-columns: 1fr 110px 36px;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .alloc-row select, .alloc-row input { padding: 7px 9px; font-size: 13.5px; }
+
+        .alloc-row button {
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--red);
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+            padding: 6px 0;
+        }
+        .alloc-row button:hover { background: #fdecec; }
+
+        .alloc-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 6px;
+            font-size: 13px;
+            flex-wrap: wrap;
+        }
+
+        .alloc-controls button {
+            background: #eef0f5;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            color: var(--primary);
+            font-weight: 600;
+            font-family: inherit;
+            font-size: 13px;
+        }
+        .alloc-controls button:hover { background: #dee2ec; }
+
+        .alloc-total {
+            margin-left: auto;
+            font-size: 13px;
+            color: var(--muted);
+            align-self: center;
+        }
+        .alloc-total.bad { color: var(--red); font-weight: 600; }
+        .alloc-total.ok  { color: var(--green); font-weight: 600; }
+
+        .run-row { display: flex; justify-content: center; margin: 22px 0 8px; }
+
+        button.primary {
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            padding: 11px 28px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button.primary:hover    { background: var(--accent-2); }
+        button.primary:disabled { background: #b8b3c2; cursor: not-allowed; }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .stat {
+            background: #fafbfd;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+        .stat-value { font-size: 1.25rem; font-weight: 700; color: var(--primary); margin-top: 4px; }
+        .stat-value.up   { color: var(--green); }
+        .stat-value.down { color: var(--red); }
+
+        .chart-wrap { position: relative; width: 100%; margin-top: 8px; }
+        canvas { width: 100% !important; height: 360px !important; }
+
+        .breakdown-wrap {
+            width: 100%;
+            overflow-x: auto;
+            margin-top: 8px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        table.breakdown {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13.5px;
+            background: #fff;
+        }
+        table.breakdown th, table.breakdown td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            white-space: nowrap;
+        }
+        table.breakdown thead th {
+            background: #fafbfd;
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 11.5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--accent);
+            position: sticky;
+            top: 0;
+        }
+        table.breakdown thead th.sortable {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        table.breakdown thead th.sortable:hover { background: #eef0f5; }
+        table.breakdown thead th .sort-arrow {
+            display: inline-block;
+            margin-left: 4px;
+            color: #b8b3c2;
+            font-size: 10px;
+            font-weight: 400;
+            transition: color 0.15s;
+        }
+        table.breakdown thead th.sort-active .sort-arrow { color: var(--accent); }
+        table.breakdown td.num, table.breakdown th.num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+        table.breakdown tbody tr:last-child td { border-bottom: none; }
+        table.breakdown tbody tr.totals td {
+            background: #fafbfd;
+            font-weight: 700;
+            color: var(--primary);
+            border-top: 2px solid var(--border);
+        }
+        table.breakdown tr.best td { background: #f0f9f3; }
+        .best-badge {
+            display: inline-block;
+            background: var(--green);
+            color: #fff;
+            font-size: 9.5px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 10px;
+            margin-left: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            vertical-align: middle;
+        }
+        table.breakdown td.up   { color: var(--green); }
+        table.breakdown td.down { color: var(--red); }
+        .breakdown-empty {
+            padding: 20px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 13.5px;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 28px;
+            padding: 12px 0 0;
+            border-top: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 13px;
+        }
+        .footer a       { color: var(--accent); text-decoration: none; }
+        .footer a:hover { color: var(--accent-2); }
+
+        .disclaimer {
+            margin-top: 14px;
+            font-size: 12px;
+            color: var(--muted);
+            text-align: center;
+            font-style: italic;
+        }
+
+        @media (max-width: 600px) {
+            .container { padding: 18px; }
+            .controls  { grid-template-columns: 1fr; }
+            .stats     { grid-template-columns: repeat(2, 1fr); }
+            canvas     { height: 280px !important; }
+            .top-bar h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="top-bar">
+            <span class="spacer"></span>
+            <h1>Chronoticker</h1>
+            <span class="spacer" style="text-align:right;">
+                <a class="help-link" href="guide.html">? Guide</a>
+            </span>
+        </div>
+        <p class="subtitle">Simulate any stock portfolio you choose — across the last 6 months to 10 years — and see how it would have performed against the S&amp;P 500. Configure weights, rebalancing cadence, and optional dollar-cost averaging to stress-test allocation strategies on real historical data before committing real capital.</p>
+
+        <div class="first-time">
+            <strong>New here?</strong> Read the <a href="guide.html">quick-start guide</a> for a 1-minute walkthrough — what the inputs mean, what the stats tell you, and how to interpret the chart.
+        </div>
+
+        <div id="status" class="data-status">Ready. Configure your portfolio and click Run Backtest.</div>
+
+        <h2>Setup</h2>
+        <div class="controls">
+            <div class="field">
+                <label for="initial">Initial Investment (USD)</label>
+                <input id="initial" type="number" min="1" step="100" value="10000">
+            </div>
+            <div class="field">
+                <label for="lookback">Lookback Window</label>
+                <select id="lookback">
+                    <option value="6mo">6 months</option>
+                    <option value="1y" selected>1 year</option>
+                    <option value="2y">2 years</option>
+                    <option value="5y">5 years</option>
+                    <option value="10y">10 years</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="rebalance">Rebalance Cadence</label>
+                <select id="rebalance">
+                    <option value="0" selected>None (buy &amp; hold)</option>
+                    <option value="30">Monthly</option>
+                    <option value="90">Quarterly</option>
+                    <option value="365">Annually</option>
+                </select>
+            </div>
+            <div class="field">
+                <label for="contribution">Monthly DCA (USD, optional)</label>
+                <input id="contribution" type="number" min="0" step="50" value="0">
+            </div>
+        </div>
+
+        <h2>Allocation</h2>
+        <div id="allocs" class="allocations"></div>
+        <div class="alloc-controls">
+            <button id="addAsset" type="button">+ Add Stock</button>
+            <button id="presetMag7" type="button">Mag 7 (equal weight)</button>
+            <button id="presetReset" type="button">Reset</button>
+            <span id="allocTotal" class="alloc-total">Total: 0%</span>
+        </div>
+
+        <div class="run-row">
+            <button id="run" class="primary" type="button">Run Backtest</button>
+        </div>
+
+        <h2>Results</h2>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-label">Final Value</div>
+                <div id="finalValue" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Total Return</div>
+                <div id="totalReturn" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">CAGR</div>
+                <div id="cagr" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Max Drawdown</div>
+                <div id="maxDD" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Volatility (ann.)</div>
+                <div id="vol" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Sharpe Ratio</div>
+                <div id="sharpe" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Best Day</div>
+                <div id="bestDay" class="stat-value">&mdash;</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Worst Day</div>
+                <div id="worstDay" class="stat-value">&mdash;</div>
+            </div>
+        </div>
+
+        <div class="chart-wrap">
+            <canvas id="equityChart"></canvas>
+        </div>
+
+        <h2>Asset Breakdown</h2>
+        <div class="breakdown-wrap">
+            <table class="breakdown" id="breakdownTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-sort="asset" title="Click to sort">Asset <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="weight" title="Click to sort">Weight <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="startPrice" title="Click to sort">Start Price <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="endPrice" title="Click to sort">End Price <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="assetReturn" title="Click to sort">Asset Return <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="contributed" title="Click to sort">Contributed <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="finalValue" title="Click to sort">Final Value <span class="sort-arrow">&#x2195;</span></th>
+                        <th class="num sortable" data-sort="pnl" title="Click to sort">P/L <span class="sort-arrow">&#x2195;</span></th>
+                    </tr>
+                </thead>
+                <tbody id="breakdownBody">
+                    <tr><td colspan="8" class="breakdown-empty">Run a backtest to see the per-asset breakdown.</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <p class="disclaimer">Past performance does not guarantee future results. Educational use only — not financial advice.</p>
+
+        <footer class="footer">
+            <a href="https://observation-deck.netlify.app/">Observation Deck</a> &nbsp;|&nbsp;
+            <a href="guide.html">Guide</a> &nbsp;|&nbsp;
+            <a href="https://github.com/00xJS/chronoticker">GitHub</a><br>
+            Live data via the public <a href="https://finance.yahoo.com/" target="_blank" rel="noopener">Yahoo Finance</a> chart API
+        </footer>
+    </div>
+
+<script>
+const STOCKS = [
+    { sym: 'AAPL',  label: 'Apple (AAPL)' },
+    { sym: 'MSFT',  label: 'Microsoft (MSFT)' },
+    { sym: 'NVDA',  label: 'Nvidia (NVDA)' },
+    { sym: 'GOOGL', label: 'Alphabet (GOOGL)' },
+    { sym: 'AMZN',  label: 'Amazon (AMZN)' },
+    { sym: 'META',  label: 'Meta (META)' },
+    { sym: 'TSLA',  label: 'Tesla (TSLA)' },
+    { sym: 'NFLX',  label: 'Netflix (NFLX)' },
+    { sym: 'AMD',   label: 'AMD (AMD)' },
+    { sym: 'AVGO',  label: 'Broadcom (AVGO)' },
+    { sym: 'SPY',   label: 'S&P 500 ETF (SPY)' },
+    { sym: 'QQQ',   label: 'Nasdaq 100 ETF (QQQ)' },
+];
+
+const BENCHMARK_SYM = 'SPY';
+const BENCHMARK_LABEL = 'SPY (S&P 500)';
+
+const allocsEl = document.getElementById('allocs');
+const totalEl  = document.getElementById('allocTotal');
+const statusEl = document.getElementById('status');
+const runBtn   = document.getElementById('run');
+let chart = null;
+const priceCache = new Map();
+
+function setStatus(kind, msg) {
+    statusEl.className = 'data-status ' + (kind || '');
+    statusEl.textContent = msg;
+}
+
+function makeRow(sym = 'AAPL', weight = 100) {
+    const row = document.createElement('div');
+    row.className = 'alloc-row';
+
+    const select = document.createElement('select');
+    STOCKS.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.sym;
+        opt.textContent = s.label;
+        if (s.sym === sym) opt.selected = true;
+        select.appendChild(opt);
+    });
+
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = 0;
+    input.max = 100;
+    input.step = 1;
+    input.value = weight;
+    input.placeholder = '%';
+    input.addEventListener('input', updateTotal);
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '×';
+    remove.title = 'Remove';
+    remove.addEventListener('click', () => {
+        if (allocsEl.children.length <= 1) return;
+        row.remove();
+        updateTotal();
+    });
+
+    row.appendChild(select);
+    row.appendChild(input);
+    row.appendChild(remove);
+    allocsEl.appendChild(row);
+    updateTotal();
+}
+
+function readAllocations() {
+    const rows = [...allocsEl.querySelectorAll('.alloc-row')];
+    const map = new Map();
+    rows.forEach(r => {
+        const sym = r.querySelector('select').value;
+        const w = parseFloat(r.querySelector('input').value) || 0;
+        map.set(sym, (map.get(sym) || 0) + w);
+    });
+    return [...map.entries()].filter(([, w]) => w > 0).map(([sym, w]) => ({ sym, weight: w }));
+}
+
+function updateTotal() {
+    const total = readAllocations().reduce((s, a) => s + a.weight, 0);
+    totalEl.textContent = `Total: ${total.toFixed(0)}%`;
+    totalEl.className = 'alloc-total ' + (Math.abs(total - 100) < 0.5 ? 'ok' : 'bad');
+}
+
+function clearAllocs() {
+    allocsEl.innerHTML = '';
+    updateTotal();
+}
+
+document.getElementById('addAsset').addEventListener('click', () => makeRow('MSFT', 0));
+document.getElementById('presetMag7').addEventListener('click', () => {
+    clearAllocs();
+    const seven = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA'];
+    seven.forEach((s, i) => makeRow(s, i === 0 ? 16 : 14));
+});
+document.getElementById('presetReset').addEventListener('click', () => {
+    clearAllocs();
+    makeRow('AAPL', 40);
+    makeRow('MSFT', 30);
+    makeRow('NVDA', 30);
+});
+
+async function fetchYahooSeries(symbol, range) {
+    const path = `v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=1d&includeAdjustedClose=true`;
+    const direct = `https://query1.finance.yahoo.com/${path}`;
+    const proxied = `https://corsproxy.io/?${encodeURIComponent(direct)}`;
+    const errors = [];
+    for (const url of [direct, proxied]) {
+        try {
+            const res = await fetch(url);
+            if (!res.ok) { errors.push(`HTTP ${res.status}`); continue; }
+            const json = await res.json();
+            const r = json?.chart?.result?.[0];
+            if (!r || !r.timestamp) { errors.push('empty response'); continue; }
+            const ts = r.timestamp;
+            const adj = r.indicators?.adjclose?.[0]?.adjclose;
+            const close = r.indicators?.quote?.[0]?.close;
+            const series = ts.map((t, i) => {
+                const p = (adj && adj[i] != null) ? adj[i] : (close && close[i] != null ? close[i] : null);
+                return p == null ? null : [t * 1000, p];
+            }).filter(Boolean);
+            if (!series.length) { errors.push('no usable points'); continue; }
+            return series;
+        } catch (err) {
+            errors.push(err.message || 'fetch failed');
+        }
+    }
+    throw new Error(`${symbol}: ${errors.join(' / ')}`);
+}
+
+async function fetchPriceSeries(symbol, range) {
+    const key = `${symbol}:${range}`;
+    if (priceCache.has(key)) return priceCache.get(key);
+    const series = await fetchYahooSeries(symbol, range);
+    priceCache.set(key, series);
+    return series;
+}
+
+function alignSeries(seriesMap) {
+    const syms = [...seriesMap.keys()];
+    const sets = syms.map(s => new Map(seriesMap.get(s).map(([t, p]) => [t, p])));
+    let common = [...sets[0].keys()];
+    for (let i = 1; i < sets.length; i++) common = common.filter(t => sets[i].has(t));
+    common.sort((a, b) => a - b);
+    const aligned = { dates: common, prices: {} };
+    syms.forEach((s, i) => {
+        aligned.prices[s] = common.map(t => sets[i].get(t));
+    });
+    return aligned;
+}
+
+function simulate(aligned, weights, initial, dcaMonthly, rebalanceDays) {
+    const syms = Object.keys(weights);
+    const n = aligned.dates.length;
+    const units = {};
+    const contributed = {};
+    syms.forEach(s => {
+        const usd = initial * (weights[s] / 100);
+        units[s] = usd / aligned.prices[s][0];
+        contributed[s] = usd;
+    });
+
+    const equity = new Array(n);
+    let lastRebalance = 0;
+    let lastDca = 0;
+
+    for (let t = 0; t < n; t++) {
+        let value = 0;
+        syms.forEach(s => value += units[s] * aligned.prices[s][t]);
+        equity[t] = value;
+
+        const daysSinceDca = (aligned.dates[t] - aligned.dates[lastDca]) / 86400000;
+        if (t > 0 && dcaMonthly > 0 && daysSinceDca >= 30) {
+            syms.forEach(s => {
+                const usd = dcaMonthly * (weights[s] / 100);
+                units[s] += usd / aligned.prices[s][t];
+                contributed[s] += usd;
+            });
+            lastDca = t;
+        }
+
+        const daysSinceReb = (aligned.dates[t] - aligned.dates[lastRebalance]) / 86400000;
+        if (rebalanceDays > 0 && t > 0 && daysSinceReb >= rebalanceDays) {
+            let total = 0;
+            syms.forEach(s => total += units[s] * aligned.prices[s][t]);
+            syms.forEach(s => {
+                const target = total * (weights[s] / 100);
+                units[s] = target / aligned.prices[s][t];
+            });
+            lastRebalance = t;
+        }
+    }
+
+    const perAsset = {};
+    syms.forEach(s => {
+        const startPrice = aligned.prices[s][0];
+        const endPrice   = aligned.prices[s][n - 1];
+        const finalValue = units[s] * endPrice;
+        const assetReturn = (endPrice - startPrice) / startPrice;
+        perAsset[s] = {
+            weight: weights[s],
+            startPrice,
+            endPrice,
+            assetReturn,
+            contributed: contributed[s],
+            finalValue,
+            pnl: finalValue - contributed[s],
+        };
+    });
+
+    return { equity, perAsset };
+}
+
+function simulateBenchmark(aligned, initial, dcaMonthly) {
+    const prices = aligned.prices[BENCHMARK_SYM];
+    if (!prices) return null;
+    const n = aligned.dates.length;
+    let units = initial / prices[0];
+    let lastDca = 0;
+    const equity = new Array(n);
+    for (let t = 0; t < n; t++) {
+        equity[t] = units * prices[t];
+        const daysSinceDca = (aligned.dates[t] - aligned.dates[lastDca]) / 86400000;
+        if (t > 0 && dcaMonthly > 0 && daysSinceDca >= 30) {
+            units += dcaMonthly / prices[t];
+            lastDca = t;
+        }
+    }
+    return equity;
+}
+
+function dailyReturns(equity) {
+    const r = [];
+    for (let i = 1; i < equity.length; i++) r.push((equity[i] - equity[i - 1]) / equity[i - 1]);
+    return r;
+}
+
+function stats(equity, dates, totalContributed) {
+    const start = equity[0];
+    const end = equity[equity.length - 1];
+    const totalReturn = (end - totalContributed) / totalContributed;
+    const years = (dates[dates.length - 1] - dates[0]) / (365.25 * 86400000);
+    const cagr = years > 0 ? Math.pow(end / Math.max(start, 1e-9), 1 / years) - 1 : 0;
+
+    let peak = -Infinity, maxDD = 0;
+    for (const v of equity) {
+        if (v > peak) peak = v;
+        const dd = (v - peak) / peak;
+        if (dd < maxDD) maxDD = dd;
+    }
+
+    const rets = dailyReturns(equity);
+    const mean = rets.reduce((s, x) => s + x, 0) / rets.length;
+    const variance = rets.reduce((s, x) => s + (x - mean) ** 2, 0) / rets.length;
+    const sd = Math.sqrt(variance);
+    const annVol = sd * Math.sqrt(252);
+    const sharpe = sd > 0 ? (mean * 252) / annVol : 0;
+    const best = Math.max(...rets);
+    const worst = Math.min(...rets);
+
+    return { end, totalReturn, cagr, maxDD, annVol, sharpe, best, worst };
+}
+
+function fmtUSD(v) {
+    return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+}
+function fmtPct(v, digits = 2) { return (v * 100).toFixed(digits) + '%'; }
+function setStat(id, text, dir) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.classList.remove('up', 'down');
+    if (dir === 'up') el.classList.add('up');
+    if (dir === 'down') el.classList.add('down');
+}
+
+let breakdownState = { syms: [], perAsset: null, bestSym: null };
+let sortState = { key: null, dir: null };
+
+function renderBreakdown(perAsset) {
+    const syms = Object.keys(perAsset);
+    let bestSym = null;
+    if (syms.length) {
+        bestSym = syms[0];
+        syms.forEach(s => { if (perAsset[s].assetReturn > perAsset[bestSym].assetReturn) bestSym = s; });
+    }
+    breakdownState = { syms, perAsset, bestSym };
+    sortState = { key: null, dir: null };
+    paintBreakdown();
+}
+
+function paintBreakdown() {
+    const tbody = document.getElementById('breakdownBody');
+    const { syms, perAsset, bestSym } = breakdownState;
+    if (!syms.length || !perAsset) {
+        tbody.innerHTML = '<tr><td colspan="8" class="breakdown-empty">Run a backtest to see the per-asset breakdown.</td></tr>';
+        updateSortIndicators();
+        return;
+    }
+
+    const labelFor = sym => (STOCKS.find(s => s.sym === sym)?.label || sym);
+    const fmtPrice = v => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+    const fmtPL = v => (v >= 0 ? '+' : '') + v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+
+    let ordered = [...syms];
+    if (sortState.key) {
+        const key = sortState.key;
+        const dir = sortState.dir === 'asc' ? 1 : -1;
+        ordered.sort((a, b) => {
+            const va = key === 'asset' ? labelFor(a) : perAsset[a][key];
+            const vb = key === 'asset' ? labelFor(b) : perAsset[b][key];
+            if (typeof va === 'string') return va.localeCompare(vb) * dir;
+            return (va - vb) * dir;
+        });
+    }
+
+    let totalContrib = 0, totalFinal = 0;
+    syms.forEach(s => { totalContrib += perAsset[s].contributed; totalFinal += perAsset[s].finalValue; });
+
+    const rows = ordered.map(s => {
+        const a = perAsset[s];
+        const isBest = s === bestSym;
+        const retClass = a.assetReturn >= 0 ? 'up' : 'down';
+        const pnlClass = a.pnl >= 0 ? 'up' : 'down';
+        return `<tr class="${isBest ? 'best' : ''}">
+            <td>${labelFor(s)}${isBest ? '<span class="best-badge">Best</span>' : ''}</td>
+            <td class="num">${a.weight.toFixed(0)}%</td>
+            <td class="num">${fmtPrice(a.startPrice)}</td>
+            <td class="num">${fmtPrice(a.endPrice)}</td>
+            <td class="num ${retClass}">${(a.assetReturn * 100).toFixed(2)}%</td>
+            <td class="num">${fmtUSD(a.contributed)}</td>
+            <td class="num">${fmtUSD(a.finalValue)}</td>
+            <td class="num ${pnlClass}">${fmtPL(a.pnl)}</td>
+        </tr>`;
+    }).join('');
+
+    const totalPnl = totalFinal - totalContrib;
+    const totalRet = totalContrib > 0 ? (totalPnl / totalContrib) : 0;
+    const totalCls = totalPnl >= 0 ? 'up' : 'down';
+    const totalsRow = `<tr class="totals">
+        <td>Portfolio Total</td>
+        <td class="num">100%</td>
+        <td class="num">&mdash;</td>
+        <td class="num">&mdash;</td>
+        <td class="num ${totalCls}">${(totalRet * 100).toFixed(2)}%</td>
+        <td class="num">${fmtUSD(totalContrib)}</td>
+        <td class="num">${fmtUSD(totalFinal)}</td>
+        <td class="num ${totalCls}">${fmtPL(totalPnl)}</td>
+    </tr>`;
+
+    tbody.innerHTML = rows + totalsRow;
+    updateSortIndicators();
+}
+
+function updateSortIndicators() {
+    document.querySelectorAll('#breakdownTable thead th.sortable').forEach(th => {
+        const key = th.dataset.sort;
+        const arrow = th.querySelector('.sort-arrow');
+        th.classList.remove('sort-active');
+        if (sortState.key === key && sortState.dir) {
+            th.classList.add('sort-active');
+            arrow.textContent = sortState.dir === 'desc' ? '▼' : '▲';
+        } else {
+            arrow.textContent = '↕';
+        }
+    });
+}
+
+document.querySelectorAll('#breakdownTable thead th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        if (sortState.key !== key) {
+            sortState = { key, dir: 'desc' };
+        } else if (sortState.dir === 'desc') {
+            sortState.dir = 'asc';
+        } else {
+            sortState = { key: null, dir: null };
+        }
+        paintBreakdown();
+    });
+});
+
+function renderChart(dates, portfolio, benchmark) {
+    const labels = dates.map(d => new Date(d).toISOString().slice(0, 10));
+    const datasets = [{
+        label: 'Portfolio',
+        data: portfolio,
+        borderColor: '#e8792b',
+        backgroundColor: 'rgba(232,121,43,0.12)',
+        borderWidth: 2,
+        fill: true,
+        pointRadius: 0,
+        tension: 0.15,
+    }];
+    if (benchmark) {
+        datasets.push({
+            label: BENCHMARK_LABEL,
+            data: benchmark,
+            borderColor: '#1b1f4b',
+            borderDash: [4, 4],
+            borderWidth: 1.6,
+            fill: false,
+            pointRadius: 0,
+            tension: 0.15,
+        });
+    }
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('equityChart').getContext('2d'), {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${fmtUSD(ctx.parsed.y)}` } }
+            },
+            scales: {
+                x: { ticks: { maxTicksLimit: 8 }, grid: { display: false } },
+                y: { ticks: { callback: v => fmtUSD(v) }, grid: { color: 'rgba(0,0,0,0.05)' } }
+            }
+        }
+    });
+}
+
+async function runBacktest() {
+    const initial = parseFloat(document.getElementById('initial').value);
+    const range = document.getElementById('lookback').value;
+    const rebalanceDays = parseInt(document.getElementById('rebalance').value, 10);
+    const dcaMonthly = parseFloat(document.getElementById('contribution').value) || 0;
+
+    const allocs = readAllocations();
+    if (!allocs.length) { setStatus('error', 'Add at least one stock.'); return; }
+    const total = allocs.reduce((s, a) => s + a.weight, 0);
+    if (Math.abs(total - 100) > 0.5) { setStatus('error', `Allocations must sum to 100% (current: ${total.toFixed(0)}%).`); return; }
+    if (!(initial > 0)) { setStatus('error', 'Initial investment must be positive.'); return; }
+
+    runBtn.disabled = true;
+    setStatus('', 'Fetching historical prices from Yahoo Finance…');
+
+    try {
+        const syms = [...new Set([...allocs.map(a => a.sym), BENCHMARK_SYM])];
+        const seriesPairs = await Promise.all(syms.map(async s => [s, await fetchPriceSeries(s, range)]));
+        const seriesMap = new Map(seriesPairs);
+        const aligned = alignSeries(seriesMap);
+        if (aligned.dates.length < 2) throw new Error('Not enough overlapping data across selected stocks.');
+
+        const weights = {};
+        allocs.forEach(a => weights[a.sym] = a.weight);
+
+        const { equity, perAsset } = simulate(aligned, weights, initial, dcaMonthly, rebalanceDays);
+        const benchmark = simulateBenchmark(aligned, initial, dcaMonthly);
+
+        const tradingMonths = aligned.dates.length / 21;
+        const totalContributed = initial + dcaMonthly * Math.floor(tradingMonths);
+        const s = stats(equity, aligned.dates, totalContributed);
+
+        setStat('finalValue', fmtUSD(s.end));
+        setStat('totalReturn', fmtPct(s.totalReturn), s.totalReturn >= 0 ? 'up' : 'down');
+        setStat('cagr', fmtPct(s.cagr), s.cagr >= 0 ? 'up' : 'down');
+        setStat('maxDD', fmtPct(s.maxDD), 'down');
+        setStat('vol', fmtPct(s.annVol));
+        setStat('sharpe', s.sharpe.toFixed(2), s.sharpe >= 1 ? 'up' : (s.sharpe < 0 ? 'down' : null));
+        setStat('bestDay', fmtPct(s.best), 'up');
+        setStat('worstDay', fmtPct(s.worst), 'down');
+
+        renderChart(aligned.dates, equity, benchmark);
+        renderBreakdown(perAsset);
+        setStatus('ok', `Backtest complete · ${aligned.dates.length} trading days`);
+    } catch (err) {
+        console.error(err);
+        setStatus('error', `Backtest failed: ${err.message}. Yahoo Finance occasionally rate-limits or rotates CORS — try again in a moment.`);
+    } finally {
+        runBtn.disabled = false;
+    }
+}
+
+runBtn.addEventListener('click', runBacktest);
+
+makeRow('AAPL', 40);
+makeRow('MSFT', 30);
+makeRow('NVDA', 30);
+</script>
+</body>
+</html>
