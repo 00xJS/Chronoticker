@@ -29,6 +29,8 @@ jobs:
           node-version: '20'
 
       - name: Fetch latest data
+        env:
+          STOOQ_APIKEY: ${{ secrets.STOOQ_APIKEY }}
         run: node scripts/fetch-data.js
 
       - name: Commit any changes

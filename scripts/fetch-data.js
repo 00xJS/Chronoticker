@@ -29,6 +29,12 @@ const SYMBOLS = [
 const RANGE_DAYS = 3653;   // ~10 years
 const RANGE_YAHOO = '10y'; // Yahoo's range param for the same window
 
+// Stooq apikey — bypasses the captcha gate that blocks cloud and
+// flagged residential IPs. Solve the captcha once at
+//   https://stooq.com/q/d/?s=aapl.us&get_apikey
+// and set as STOOQ_APIKEY env var (locally) or repo secret (CI).
+const STOOQ_APIKEY = process.env.STOOQ_APIKEY || '';
+
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
 
@@ -52,8 +58,9 @@ function snippet(s, n = 160) {
 async function fetchStooq(symbol) {
     const end   = new Date();
     const start = new Date(end.getTime() - RANGE_DAYS * 86400000);
+    const apikeyParam = STOOQ_APIKEY ? `&apikey=${encodeURIComponent(STOOQ_APIKEY)}` : '';
     const url   = `https://stooq.com/q/d/l/?s=${symbol.toLowerCase()}.us` +
-                  `&d1=${ymd(start)}&d2=${ymd(end)}&i=d`;
+                  `&d1=${ymd(start)}&d2=${ymd(end)}&i=d${apikeyParam}`;
 
     const res = await fetch(url, {
         headers: { ...BROWSER_HEADERS, 'Referer': 'https://stooq.com/' },
@@ -188,6 +195,8 @@ async function fetchSymbol(symbol) {
 async function main() {
     const dataDir = path.join(__dirname, '..', 'data');
     await fs.mkdir(dataDir, { recursive: true });
+
+    console.log(`Stooq apikey: ${STOOQ_APIKEY ? '✓ present' : '✗ missing (will hit captcha gate from cloud/flagged IPs)'}`);
 
     let success = 0, failed = 0;
     const errors = [];
