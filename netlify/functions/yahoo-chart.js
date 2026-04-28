@@ -1,19 +1,14 @@
 // Netlify serverless proxy for keyless stock historical price data.
 //
-// Why this exists:
-//   - Browsers can't call Yahoo Finance directly (CORS).
-//   - Public CORS proxies (corsproxy.io etc.) get IP-banned by Yahoo.
-//   - Yahoo aggressively rate-limits Netlify's edge IPs (HTTP 429).
+// Sources tried in priority order:
+//   1. Stooq           — keyless CSV (most reliable when it works).
+//   2. Yahoo + crumb   — cookie + crumb auth flow Yahoo's own UI uses.
+//                        Often gets past the 429 wall that hits direct
+//                        unauthenticated calls from cloud IPs.
+//   3. Yahoo direct    — last resort, frequently 429s from Netlify IPs.
 //
-// Strategy: try multiple upstream sources, return the first one that
-// works, all reshaped into Yahoo's chart-API JSON so the frontend
-// doesn't need to know which source the data came from.
-//
-// Sources, in priority order:
-//   1. Stooq — keyless CSV historical data, generous rate limits.
-//      The most reliable upstream for US-listed stocks/ETFs.
-//   2. Yahoo Finance v8 chart endpoint — better adjusted-close handling
-//      (dividends), but rate-limits aggressively from cloud IPs.
+// All sources reshape into Yahoo chart-API JSON so the frontend stays
+// source-agnostic.
 //
 // Endpoint:  /api/chart?symbol=AAPL&range=1y
 // Allowed ranges: 1mo 3mo 6mo ytd 1y 2y 5y 10y max
@@ -32,6 +27,12 @@ const RANGE_TO_DAYS = {
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
+
+const BROWSER_HEADERS = {
+    'User-Agent':      UA,
+    'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,text/csv,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+};
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin':  '*',
@@ -54,10 +55,11 @@ function ymd(date) {
            `${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
+function snippet(s, n = 180) {
+    return (s || '').replace(/\s+/g, ' ').slice(0, n);
+}
+
 // ── Source 1: Stooq ─────────────────────────────────────────────────
-// Returns CSV with Date,Open,High,Low,Close,Volume. We map the symbol
-// to Stooq's `<sym>.us` form, fetch the CSV, parse Date + Close, and
-// reshape into Yahoo's chart response format.
 async function fetchStooq(symbol, range) {
     const days  = RANGE_TO_DAYS[range] || 366;
     const end   = new Date();
@@ -67,24 +69,23 @@ async function fetchStooq(symbol, range) {
                 `&d1=${ymd(start)}&d2=${ymd(end)}&i=d`;
 
     const res = await fetch(url, {
-        headers: {
-            'User-Agent': UA,
-            'Accept':     'text/csv, text/plain, */*',
-        },
+        headers: { ...BROWSER_HEADERS, 'Referer': 'https://stooq.com/' },
     });
-    if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const csv = (await res.text()).trim();
-    if (!csv || /^no data/i.test(csv) || csv.length < 30) {
-        throw new Error('Stooq: empty or "no data" response');
+    const body = (await res.text()).trim();
+    if (!body) throw new Error('empty response');
+    if (/^</.test(body)) throw new Error(`HTML not CSV: "${snippet(body)}"`);
+    if (/^no data/i.test(body) || body.length < 30) {
+        throw new Error(`no-data response: "${snippet(body)}"`);
     }
 
-    const lines  = csv.split(/\r?\n/);
-    const header = lines[0].split(',').map(s => s.trim());
-    const dateIdx  = header.indexOf('Date');
-    const closeIdx = header.indexOf('Close');
+    const lines  = body.split(/\r?\n/);
+    const header = lines[0].split(',').map(s => s.trim().toLowerCase());
+    const dateIdx  = header.indexOf('date');
+    const closeIdx = header.indexOf('close');
     if (dateIdx < 0 || closeIdx < 0) {
-        throw new Error('Stooq: unexpected CSV header');
+        throw new Error(`unexpected CSV header: "${snippet(body)}"`);
     }
 
     const timestamps = [];
@@ -101,8 +102,7 @@ async function fetchStooq(symbol, range) {
             closes.push(c);
         }
     }
-
-    if (!timestamps.length) throw new Error('Stooq: no rows parsed');
+    if (!timestamps.length) throw new Error('no rows parsed');
 
     return {
         chart: {
@@ -124,28 +124,72 @@ async function fetchStooq(symbol, range) {
     };
 }
 
-// ── Source 2: Yahoo Finance v8 chart endpoint ───────────────────────
-// Better data quality (adjusted close handles dividends correctly)
-// but rate-limits Netlify IPs aggressively. Used as fallback when
-// Stooq fails (e.g., for symbols Stooq doesn't carry).
-async function fetchYahoo(symbol, range) {
+// ── Source 2: Yahoo with cookie + crumb ─────────────────────────────
+// Mirrors what finance.yahoo.com does in the browser. Often gets past
+// the 429 wall that hits direct anonymous calls from cloud IPs.
+async function fetchYahooCrumb(symbol, range) {
+    // 1. Hit fc.yahoo.com to get session cookies (A1, A1S, A3).
+    const sessionRes = await fetch('https://fc.yahoo.com', {
+        headers: BROWSER_HEADERS,
+        redirect: 'follow',
+    });
+    const rawSetCookie = sessionRes.headers.get('set-cookie') || '';
+    if (!rawSetCookie) throw new Error('no session cookies received');
+
+    // Header may be a comma-joined string of multiple Set-Cookie values.
+    // Split conservatively: comma followed by a cookie name=.
+    const cookies = rawSetCookie
+        .split(/,(?=\s*[A-Za-z0-9_!#$&'*+\-.^`|~]+=)/)
+        .map(c => c.split(';')[0].trim())
+        .filter(Boolean)
+        .join('; ');
+    if (!cookies) throw new Error('failed to parse session cookies');
+
+    // 2. Fetch a crumb from getcrumb endpoint, using the cookies.
+    const crumbRes = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
+        headers: { ...BROWSER_HEADERS, 'Cookie': cookies, 'Referer': 'https://finance.yahoo.com/' },
+    });
+    if (!crumbRes.ok) throw new Error(`crumb HTTP ${crumbRes.status}`);
+    const crumb = (await crumbRes.text()).trim();
+    if (!crumb || crumb.length > 64) throw new Error(`bad crumb: "${snippet(crumb, 64)}"`);
+
+    // 3. Hit the chart endpoint with the cookie + crumb in tow.
+    const chartUrl = `https://query1.finance.yahoo.com/v8/finance/chart/` +
+        `${encodeURIComponent(symbol)}?range=${range}&interval=1d&includeAdjustedClose=true` +
+        `&crumb=${encodeURIComponent(crumb)}`;
+    const chartRes = await fetch(chartUrl, {
+        headers: {
+            ...BROWSER_HEADERS,
+            'Accept':  'application/json, text/plain, */*',
+            'Cookie':  cookies,
+            'Referer': 'https://finance.yahoo.com/',
+        },
+    });
+    if (!chartRes.ok) throw new Error(`chart HTTP ${chartRes.status}`);
+    const json = await chartRes.json();
+    const r = json?.chart?.result?.[0];
+    if (!r || !r.timestamp) throw new Error('empty result');
+    if (r.meta) r.meta.dataSource = 'yahoo-crumb';
+    return json;
+}
+
+// ── Source 3: Yahoo direct (no auth) ────────────────────────────────
+async function fetchYahooDirect(symbol, range) {
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/` +
         `${encodeURIComponent(symbol)}?range=${range}` +
         `&interval=1d&includeAdjustedClose=true`;
-
     const res = await fetch(url, {
         headers: {
-            'User-Agent':      UA,
-            'Accept':          'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Referer':         'https://finance.yahoo.com/',
+            ...BROWSER_HEADERS,
+            'Accept':  'application/json, text/plain, */*',
+            'Referer': 'https://finance.yahoo.com/',
         },
     });
-    if (!res.ok) throw new Error(`Yahoo HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     const r = json?.chart?.result?.[0];
-    if (!r || !r.timestamp) throw new Error('Yahoo: empty result');
-    if (r.meta) r.meta.dataSource = 'yahoo';
+    if (!r || !r.timestamp) throw new Error('empty result');
+    if (r.meta) r.meta.dataSource = 'yahoo-direct';
     return json;
 }
 
@@ -173,21 +217,19 @@ exports.handler = async (event) => {
     }
 
     const errors = [];
+    const sources = [
+        ['stooq',        () => fetchStooq(symbol, range)],
+        ['yahoo-crumb',  () => fetchYahooCrumb(symbol, range)],
+        ['yahoo-direct', () => fetchYahooDirect(symbol, range)],
+    ];
 
-    // Try Stooq first — most reliable for US-listed equities/ETFs.
-    try {
-        const data = await fetchStooq(symbol, range);
-        return jsonResponse(200, data);
-    } catch (err) {
-        errors.push(`stooq: ${err.message || err}`);
-    }
-
-    // Fall back to Yahoo.
-    try {
-        const data = await fetchYahoo(symbol, range);
-        return jsonResponse(200, data);
-    } catch (err) {
-        errors.push(`yahoo: ${err.message || err}`);
+    for (const [name, fn] of sources) {
+        try {
+            const data = await fn();
+            return jsonResponse(200, data);
+        } catch (err) {
+            errors.push(`${name}: ${err.message || err}`);
+        }
     }
 
     return jsonResponse(502, {
