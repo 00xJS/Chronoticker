@@ -1,0 +1,43 @@
+name: Refresh stock data
+
+on:
+  schedule:
+    # Daily at 02:00 UTC — well after US markets close (21:00 UTC), so
+    # the previous day's close is settled and Yahoo's data is current.
+    - cron: '0 2 * * *'
+  # Manual trigger via the Actions tab.
+  workflow_dispatch:
+
+permissions:
+  # Required to commit refreshed JSON back to the repo.
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch latest data
+        run: node scripts/fetch-data.js
+
+      - name: Commit any changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          # Only commit if something actually changed (prevents empty
+          # commits on weekends / market-closed days when prices aren't
+          # updated).
+          if git diff --staged --quiet; then
+            echo "No data changes — skipping commit."
+          else
+            git commit -m "Refresh stock data $(date -u +%Y-%m-%d)"
+            git push
+          fi

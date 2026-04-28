@@ -585,18 +585,52 @@ document.getElementById('presetReset').addEventListener('click', () => {
     makeRow('NVDA', 30);
 });
 
+// Map of lookback window → days, used to slice the pre-baked 10-year
+// history down to the requested window.
+const RANGE_TO_DAYS = {
+    '1mo': 31,  '3mo': 92,  '6mo': 183, 'ytd': 365,
+    '1y':  366, '2y':  731, '5y':  1827, '10y': 3653,
+    'max': 9999,
+};
+
 async function fetchYahooSeries(symbol, range) {
-    // Try sources in order of reliability:
-    //   1. Our own Netlify serverless proxy (/api/chart) — most reliable in production.
-    //      Same-origin so no CORS, and Yahoo trusts Netlify's edge IPs.
-    //   2. Direct Yahoo — works in local dev when Yahoo's CORS happens to be permissive.
-    //   3. Public corsproxy.io — last-resort fallback for environments where (1) isn't available.
+    const errors = [];
+
+    // ── PRIMARY: pre-baked static data from /data/SYMBOL.json ─────────
+    // Refreshed nightly by the GitHub Action defined in
+    // .github/workflows/refresh-data.yml. Bulletproof because it's
+    // served as a static asset from Netlify's CDN — no API calls, no
+    // CORS, no rate limits.
+    try {
+        const res = await fetch(`/data/${encodeURIComponent(symbol)}.json`);
+        if (res.ok) {
+            const data = await res.json();
+            const days = RANGE_TO_DAYS[range] || 366;
+            const cutoff = Math.floor((Date.now() - days * 86400000) / 1000);
+            const series = [];
+            for (let i = 0; i < data.timestamps.length; i++) {
+                if (data.timestamps[i] >= cutoff) {
+                    series.push([data.timestamps[i] * 1000, data.closes[i]]);
+                }
+            }
+            if (series.length) return series;
+            errors.push('prebaked: empty after slicing window');
+        } else {
+            errors.push(`prebaked: HTTP ${res.status}`);
+        }
+    } catch (err) {
+        errors.push(`prebaked: ${err.message || 'fetch failed'}`);
+    }
+
+    // ── FALLBACK: live API chain (often fails from cloud IPs) ─────────
+    //   1. Netlify serverless proxy (/api/chart) — keyless, multi-source.
+    //   2. Direct Yahoo — sometimes works in local dev.
+    //   3. Public corsproxy.io — last resort.
     const path     = `v8/finance/chart/${encodeURIComponent(symbol)}?range=${encodeURIComponent(range)}&interval=1d&includeAdjustedClose=true`;
     const ownProxy = `/api/chart?symbol=${encodeURIComponent(symbol)}&range=${encodeURIComponent(range)}`;
     const direct   = `https://query1.finance.yahoo.com/${path}`;
     const proxied  = `https://corsproxy.io/?${encodeURIComponent(direct)}`;
 
-    const errors = [];
     for (const url of [ownProxy, direct, proxied]) {
         try {
             const res = await fetch(url);
