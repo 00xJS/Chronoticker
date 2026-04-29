@@ -400,6 +400,7 @@
         <div id="allocs" class="allocations"></div>
         <div class="alloc-controls">
             <button id="addAsset" type="button">+ Add Stock</button>
+            <button id="equalWeights" type="button" title="Split 100% evenly across current rows">Equal Weights</button>
             <button id="presetMag7" type="button">Mag 7 (equal weight)</button>
             <button id="presetReset" type="button">Reset</button>
             <span id="allocTotal" class="alloc-total">Total: 0%</span>
@@ -573,6 +574,20 @@ function clearAllocs() {
 }
 
 document.getElementById('addAsset').addEventListener('click', () => makeRow('MSFT', 0));
+document.getElementById('equalWeights').addEventListener('click', () => {
+    const rows = [...allocsEl.querySelectorAll('.alloc-row')];
+    if (!rows.length) return;
+    // Distribute 100% as integers; spread the remainder across the first
+    // few rows so the total always lands at exactly 100% (no 33.33%-style
+    // float weirdness in the inputs).
+    const base = Math.floor(100 / rows.length);
+    const remainder = 100 - base * rows.length;
+    rows.forEach((row, i) => {
+        const input = row.querySelector('input');
+        input.value = base + (i < remainder ? 1 : 0);
+    });
+    updateTotal();
+});
 document.getElementById('presetMag7').addEventListener('click', () => {
     clearAllocs();
     const seven = ['AAPL', 'MSFT', 'NVDA', 'GOOGL', 'AMZN', 'META', 'TSLA'];
