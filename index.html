@@ -117,6 +117,7 @@
             color: var(--muted);
         }
         .data-status.ok    { background: #e7f6ec; border-color: #c8e7d2; color: #1a6b35; }
+        .data-status.warn  { background: #fdf6e7; border-color: #f0dfb4; color: #8a6516; }
         .data-status.error { background: #fdecec; border-color: #f5c6c6; color: #a82424; }
 
         .controls {
@@ -477,7 +478,7 @@
             <a href="https://observation-deck.netlify.app/">Observation Deck</a> &nbsp;|&nbsp;
             <a href="guide.html">Guide</a> &nbsp;|&nbsp;
             <a href="https://github.com/00xJS/chronoticker">GitHub</a><br>
-            Live data via the public <a href="https://finance.yahoo.com/" target="_blank" rel="noopener">Yahoo Finance</a> chart API, served through a Netlify serverless proxy
+            Daily price data from <a href="https://www.tiingo.com/" target="_blank" rel="noopener">Tiingo</a>, pre-baked into the site and refreshed nightly
         </footer>
     </div>
 
@@ -621,7 +622,12 @@ async function fetchYahooSeries(symbol, range) {
         if (res.ok) {
             const data = await res.json();
             const days = RANGE_TO_DAYS[range] || 366;
-            const cutoff = Math.floor((Date.now() - days * 86400000) / 1000);
+            // Anchor the window to the newest baked data point, not the
+            // wall clock — otherwise the effective window silently
+            // shrinks as the baked data ages.
+            const lastTs = data.timestamps.length
+                ? data.timestamps[data.timestamps.length - 1] : 0;
+            const cutoff = lastTs - days * 86400;
             const series = [];
             for (let i = 0; i < data.timestamps.length; i++) {
                 if (data.timestamps[i] >= cutoff) {
@@ -658,7 +664,10 @@ async function fetchYahooSeries(symbol, range) {
             const close = r.indicators?.quote?.[0]?.close;
             const series = ts.map((t, i) => {
                 const p = (adj && adj[i] != null) ? adj[i] : (close && close[i] != null ? close[i] : null);
-                return p == null ? null : [t * 1000, p];
+                // Yahoo stamps daily bars at the session open; baked data
+                // uses midnight UTC. Floor to midnight so mixed sources
+                // still intersect in alignSeries.
+                return p == null ? null : [(t - (t % 86400)) * 1000, p];
             }).filter(Boolean);
             if (!series.length) { errors.push('no usable points'); continue; }
             return series;
@@ -977,7 +986,7 @@ async function runBacktest() {
     if (!(initial > 0)) { setStatus('error', 'Initial investment must be positive.'); return; }
 
     runBtn.disabled = true;
-    setStatus('', 'Fetching historical prices from Yahoo Finance…');
+    setStatus('', 'Loading historical prices…');
 
     try {
         const syms = [...new Set([...allocs.map(a => a.sym), BENCHMARK_SYM])];
@@ -1007,10 +1016,30 @@ async function runBacktest() {
 
         renderChart(aligned.dates, equity, benchmark);
         renderBreakdown(perAsset);
-        setStatus('ok', `Backtest complete · ${aligned.dates.length} trading days`);
+
+        // Warn if the results end noticeably in the past. 7 calendar days
+        // comfortably covers weekends and market holidays. Distinguish
+        // "every symbol is stale" (nightly refresh failing) from one
+        // symbol whose series legitimately ends early and drags the
+        // aligned intersection back with it.
+        const lastMs = aligned.dates[aligned.dates.length - 1];
+        const staleDays = Math.floor((Date.now() - lastMs) / 86400000);
+        if (staleDays > 7) {
+            const lastDate = new Date(lastMs).toISOString().slice(0, 10);
+            const endOf = s => { const ser = seriesMap.get(s); return ser[ser.length - 1][0]; };
+            const newestEnd = Math.max(...syms.map(endOf));
+            if (Date.now() - newestEnd > 7 * 86400000) {
+                setStatus('warn', `Backtest complete · ${aligned.dates.length} trading days — ⚠ price data ends ${lastDate} (${staleDays} days ago). The nightly data refresh may be failing.`);
+            } else {
+                const laggards = syms.filter(s => endOf(s) < newestEnd - 7 * 86400000);
+                setStatus('warn', `Backtest complete · ${aligned.dates.length} trading days — ⚠ results end ${lastDate} because ${laggards.join(', ') || 'one symbol'} has no newer data.`);
+            }
+        } else {
+            setStatus('ok', `Backtest complete · ${aligned.dates.length} trading days`);
+        }
     } catch (err) {
         console.error(err);
-        setStatus('error', `Backtest failed: ${err.message}. Yahoo Finance occasionally rate-limits or rotates CORS — try again in a moment.`);
+        setStatus('error', `Backtest failed: ${err.message}. If this persists, the baked data files under /data/ may be missing for a selected symbol.`);
     } finally {
         runBtn.disabled = false;
     }

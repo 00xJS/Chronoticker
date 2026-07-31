@@ -275,7 +275,7 @@
         <div class="step">
             <div class="step-num">6</div>
             <div class="step-body">
-                <strong>Click Run Backtest.</strong> The tool fetches historical adjusted-close prices from Yahoo Finance, aligns the trading days, simulates the strategy, and renders the chart + stats.
+                <strong>Click Run Backtest.</strong> The tool loads historical adjusted-close prices, aligns the trading days, simulates the strategy, and renders the chart + stats.
             </div>
         </div>
 
@@ -345,7 +345,7 @@
         </ul>
 
         <div class="callout">
-            <strong>How the data gets here:</strong> Chronoticker uses Yahoo Finance's public chart endpoint (no API key required) and routes requests through a small Netlify serverless function running on Netlify's edge. This sidesteps the CORS and rate-limiting problems that affect direct browser calls and public CORS proxies, and keeps the project fully keyless. If a request occasionally fails (Yahoo can still rate-limit), wait a few seconds and try again.
+            <strong>How the data gets here:</strong> Chronoticker serves daily adjusted-close prices from the <a href="https://www.tiingo.com/" target="_blank" rel="noopener">Tiingo</a> API, pre-baked into the site as static JSON and refreshed nightly by a GitHub Action. Because backtests read static files from the CDN, there are no runtime API calls, no CORS issues, and no rate limits. If the nightly refresh ever breaks, results simply end at the last refreshed day — the app shows a warning when that happens.
         </div>
 
         <p class="callout"><strong>Educational use only.</strong> Backtests are a thinking tool, not a prediction. Past performance does not guarantee future results. Nothing here is financial advice.</p>
