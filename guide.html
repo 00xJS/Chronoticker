@@ -4,29 +4,109 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chronoticker · Quick-Start Guide</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0d1c">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6fb">
     <style>
+        /* ===== Observation Deck design tokens ===== */
         :root {
-            --primary:      #1b1f4b;
-            --accent:       #e8792b;
-            --accent-2:     #c23e8c;
-            --green:        #1a9e4a;
-            --red:          #d32f2f;
-            --border:       #d4d0e0;
-            --bg:           #f4f5f7;
-            --card:         #ffffff;
-            --text:         #222;
-            --muted:        #666;
+            color-scheme: dark light;
+
+            /* surfaces */
+            --bg: #0a0d1c;
+            --bg-raised: #10142e;
+            --card: #12163a;
+            --card-chrome: #0c0f26;
+            --border: rgba(255, 255, 255, 0.09);
+            --border-hover: rgba(255, 154, 68, 0.55);
+
+            /* text */
+            --text: #e8eaf6;
+            --muted: #9ba1c5;
+            --faint: #6c7299;
+
+            /* accents */
+            --accent: #ff9a44;
+            --accent-deep: #e8792b;
+            --magenta: #c23e8c;
+
+            /* semantic */
+            --live: #3ddc84;
+            --warn: #ffc24b;
+            --down: #ff6b6b;
+
+            /* components */
+            --tag-bg: rgba(255, 154, 68, 0.10);
+            --tag-text: #ffb877;
+            --shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+            --btn-ink: #0a0d1c;
+
+            /* type */
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
+            --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+            /* shape */
+            --radius-card: 12px;
+            --radius-control: 8px;
+            --radius-pill: 999px;
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #f5f6fb;
+                --bg-raised: #ffffff;
+                --card: #ffffff;
+                --card-chrome: #eceef7;
+                --border: #dcdeeb;
+                --border-hover: rgba(232, 121, 43, 0.6);
+                --text: #1b1f4b;
+                --muted: #4d5378;
+                --faint: #6a7095;
+                --accent: #c95f16;
+                --accent-deep: #a84c09;
+                --tag-bg: rgba(232, 121, 43, 0.10);
+                --tag-text: #a3540e;
+                --live: #148a4d;
+                --warn: #8a6200;
+                --down: #d64545;
+                --shadow: 0 10px 30px rgba(27, 31, 75, 0.10);
+                --btn-ink: #ffffff;
+            }
         }
 
         *, *::before, *::after { box-sizing: border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            font-family: var(--font-sans);
             margin: 0;
-            padding: 20px;
+            padding: 28px 20px;
             background: var(--bg);
             color: var(--text);
             line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ambient glow */
+        body::before {
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            pointer-events: none;
+            background:
+                radial-gradient(900px 480px at 15% -10%, rgba(232, 121, 43, 0.10), transparent 60%),
+                radial-gradient(800px 480px at 90% 0%, rgba(194, 62, 140, 0.09), transparent 60%);
+        }
+
+        ::selection { background: var(--accent-deep); color: #fff; }
+        a:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 3px;
+            border-radius: 4px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; }
         }
 
         .container {
@@ -34,9 +114,23 @@
             margin: auto;
             padding: 28px 32px;
             background: var(--card);
-            box-shadow: 0 2px 20px rgba(0,0,0,0.09);
-            border-radius: 14px;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            border-radius: var(--radius-card);
         }
+
+        .kicker {
+            display: block;
+            text-align: center;
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--faint);
+            text-decoration: none;
+            margin-bottom: 10px;
+        }
+        .kicker:hover { color: var(--accent); }
 
         .top-bar {
             display: flex;
@@ -52,36 +146,44 @@
             gap: 6px;
             padding: 6px 12px;
             background: var(--accent);
-            color: #fff;
-            border-radius: 6px;
+            color: var(--btn-ink);
+            border-radius: var(--radius-control);
             text-decoration: none;
             font-size: 13px;
             font-weight: 600;
+            transition: background 0.2s ease, transform 0.2s ease;
         }
-        .back-link:hover { background: var(--accent-2); }
+        .back-link:hover { background: var(--accent-deep); transform: translateY(-1px); }
 
         h1 {
-            color: var(--primary);
+            color: var(--text);
             margin: 0;
             font-size: 1.75rem;
             letter-spacing: -0.5px;
         }
 
         h2 {
-            color: var(--text);
-            font-size: 1.1rem;
-            margin: 28px 0 10px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            margin: 30px 0 10px;
             padding-bottom: 6px;
-            border-bottom: 2px solid var(--accent);
+            border-bottom: 1px solid var(--border);
         }
 
         h3 {
-            color: var(--primary);
+            color: var(--text);
             margin: 18px 0 4px;
             font-size: 1rem;
         }
 
         p, li { font-size: 14.5px; color: var(--text); }
+
+        a { color: var(--accent); }
+        a:hover { color: var(--accent-deep); }
 
         ol, ul { padding-left: 22px; }
 
@@ -95,7 +197,7 @@
 
         .step-num {
             background: var(--accent);
-            color: #fff;
+            color: var(--btn-ink);
             width: 28px;
             height: 28px;
             border-radius: 50%;
@@ -110,7 +212,7 @@
         .step-body {
             font-size: 14.5px;
         }
-        .step-body strong { color: var(--primary); }
+        .step-body strong { color: var(--text); }
 
         .stat-table {
             width: 100%;
@@ -118,7 +220,7 @@
             margin: 12px 0 18px;
             font-size: 14px;
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: var(--radius-control);
             overflow: hidden;
         }
         .stat-table th, .stat-table td {
@@ -132,51 +234,53 @@
         .stat-table tr:last-child td { border-bottom: none; }
         .stat-table th {
             width: 200px;
-            color: var(--primary);
+            color: var(--text);
             font-weight: 700;
-            background: #fafbfd;
+            background: var(--card-chrome);
             border-right: 1px solid var(--border);
         }
-        .stat-table td { background: #fff; }
-        .stat-table strong { color: var(--primary); }
+        .stat-table td { background: transparent; }
+        .stat-table strong { color: var(--text); }
 
         .callout {
-            background: #fff7ef;
-            border: 1px solid #f3d6b3;
-            border-radius: 8px;
+            background: var(--tag-bg);
+            border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+            border-radius: var(--radius-control);
             padding: 12px 16px;
             margin: 16px 0;
             font-size: 13.5px;
-            color: #6e4a17;
+            color: var(--muted);
         }
-        .callout strong { color: var(--accent); }
+        .callout strong { color: var(--tag-text); }
 
         .warn {
-            background: #fdecec;
-            border: 1px solid #f5c6c6;
-            color: #a82424;
+            background: color-mix(in srgb, var(--down) 9%, transparent);
+            border: 1px solid color-mix(in srgb, var(--down) 30%, transparent);
+            color: var(--muted);
         }
-        .warn strong { color: var(--red); }
+        .warn strong { color: var(--down); }
 
         code {
-            background: #eef0f5;
+            background: var(--bg-raised);
+            border: 1px solid var(--border);
             padding: 1px 6px;
             border-radius: 4px;
-            font-size: 13px;
+            font-family: var(--font-mono);
+            font-size: 12.5px;
         }
 
         details {
             margin: 8px 0;
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: var(--radius-control);
             padding: 0;
-            background: #fafbfd;
+            background: var(--bg-raised);
         }
         details summary {
             padding: 10px 14px;
             cursor: pointer;
             font-weight: 600;
-            color: var(--primary);
+            color: var(--text);
             font-size: 14px;
         }
         details[open] summary { border-bottom: 1px solid var(--border); }
@@ -187,11 +291,11 @@
             margin-top: 28px;
             padding: 12px 0 0;
             border-top: 1px solid var(--border);
-            color: var(--muted);
+            color: var(--faint);
             font-size: 13px;
         }
         .footer a       { color: var(--accent); text-decoration: none; }
-        .footer a:hover { color: var(--accent-2); }
+        .footer a:hover { color: var(--accent-deep); }
 
         @media (max-width: 600px) {
             .container { padding: 18px; }
@@ -204,15 +308,15 @@
             .stat-table th {
                 padding-bottom: 4px;
                 border-bottom: 1px solid var(--border);
-                background: #fafbfd;
+                background: var(--card-chrome);
             }
             .stat-table td {
                 padding-top: 8px;
-                background: #fff;
+                background: transparent;
             }
             .stat-table tr {
                 display: block;
-                border-bottom: 2px solid var(--accent);
+                border-bottom: 1px solid var(--border);
             }
             .stat-table tr:last-child { border-bottom: none; }
             .stat-table tr td:last-child,
@@ -222,6 +326,7 @@
 </head>
 <body>
     <div class="container">
+        <a class="kicker" href="https://observation-deck.netlify.app/">Observation Deck / Chronoticker</a>
         <div class="top-bar">
             <h1>Quick-Start Guide</h1>
             <a class="back-link" href="index.html">← Back to Chronoticker</a>
@@ -282,7 +387,7 @@
         <h2>Reading the results</h2>
 
         <h3>The chart</h3>
-        <p>The orange line is your portfolio's value over time. The dashed navy line is what the same money would have done in the S&amp;P 500 (SPY). Above SPY = you outperformed; below = you underperformed.</p>
+        <p>The orange line is your portfolio's value over time. The dashed magenta line is what the same money would have done in the S&amp;P 500 (SPY). Above SPY = you outperformed; below = you underperformed.</p>
 
         <h3>The stats</h3>
         <table class="stat-table">

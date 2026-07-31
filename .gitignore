@@ -2,3 +2,6 @@
 .vscode/
 *.log
 node_modules/
+
+# Local-only theme handoff doc (see observation-deck repo)
+THEME-HANDOFF.md
