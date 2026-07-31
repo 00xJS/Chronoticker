@@ -9,7 +9,7 @@ Static single-page app (vanilla JS + Chart.js) deployed to Netlify, served entir
 ```
 GitHub Action (nightly, 02:00 UTC)
     ↓ runs scripts/fetch-data.js
-    ↓ fetches Yahoo Finance from a clean IP
+    ↓ fetches the Tiingo API (free token, works from CI IPs)
     ↓ writes data/AAPL.json, data/MSFT.json, … (one per symbol)
     ↓ commits + pushes
         ↓
@@ -20,16 +20,20 @@ Browser reads /data/SYMBOL.json directly (same-origin, on CDN)
 
 ### Why this architecture
 
-The original design was a Netlify serverless function ([`netlify/functions/yahoo-chart.js`](netlify/functions/yahoo-chart.js)) that proxied Yahoo Finance live. It works locally, but **all keyless live stock-data sources block cloud IPs** — Yahoo rate-limits Netlify's edges with HTTP 429, Stooq now requires a captcha-solved API key for cloud requests, and public CORS proxies routinely get IP-banned. There is no reliable runtime keyless path for stock data from a serverless function.
+The original design was a Netlify serverless function ([`netlify/functions/yahoo-chart.js`](netlify/functions/yahoo-chart.js)) that proxied Yahoo Finance live. It works locally, but keyless live stock-data sources have progressively locked out scripted access:
 
-The fix: fetch from non-blocked IPs (your laptop or a GitHub Actions runner) at build/refresh time, and serve the result as static JSON. For a backtester this is the correct architecture anyway — historical data doesn't change, so refreshing once per day is plenty.
+- **Yahoo** rate-limits datacenter IP ranges (Netlify, GitHub runners, Cloudflare) with HTTP 429, and per the yfinance/yahoo-finance2 communities this extends to many residential IPs now too.
+- **Stooq** first required a captcha-solved apikey for cloud IPs (early 2026), then put a JavaScript proof-of-work challenge in front of its CSV endpoint (~June 2026) that blocks *all* non-browser clients, apikey or not. This is what killed the nightly refresh between 2026-06-06 and 2026-07-30.
+- Public CORS proxies routinely get IP-banned.
+
+There is no reliable keyless path anymore. The current fix: fetch from **Tiingo**, a sanctioned free API with token auth that works identically from any IP. The free tier (50 requests/hour, 1,000/day) dwarfs this project's 12 requests/day, and returns 30+ years of dividend+split-adjusted daily closes. Data is fetched at refresh time and served as static JSON — for a backtester this is the correct architecture anyway, since historical data doesn't change intraday.
 
 ### Components
 
-- **[`scripts/fetch-data.js`](scripts/fetch-data.js)** — Node 18+ script that fetches 10 years of daily adjusted-close prices for the canonical symbol list and writes one JSON file per symbol to `data/`. Zero dependencies.
-- **[`.github/workflows/refresh-data.yml`](.github/workflows/refresh-data.yml)** — GitHub Action that runs the script daily at 02:00 UTC and auto-commits the refreshed JSON. Manually triggerable via the Actions tab.
-- **[`data/`](data/)** — One `SYMBOL.json` file per stock, structured as `{ symbol, updated, source, range, timestamps[], closes[] }`. Served as static assets by Netlify.
-- **[`netlify/functions/yahoo-chart.js`](netlify/functions/yahoo-chart.js)** — Kept as a runtime fallback in case the static data is missing for a symbol. Tries Stooq, then Yahoo with cookie+crumb auth, then Yahoo direct. Best-effort only.
+- **[`scripts/fetch-data.js`](scripts/fetch-data.js)** — Node 18+ script that fetches 10 years of daily adjusted-close prices for the canonical symbol list and writes one JSON file per symbol to `data/`. Zero dependencies. Tries Tiingo first, then Yahoo (cookie+crumb, then direct) as emergency fallbacks.
+- **[`.github/workflows/refresh-data.yml`](.github/workflows/refresh-data.yml)** — GitHub Action that runs the script daily at 02:00 UTC and auto-commits the refreshed JSON. Manually triggerable via the Actions tab. Needs the `TIINGO_TOKEN` repo secret.
+- **[`data/`](data/)** — One `SYMBOL.json` file per stock, structured as `{ symbol, updated, source, rangeDays, timestamps[], closes[] }`. Served as static assets by Netlify.
+- **[`netlify/functions/yahoo-chart.js`](netlify/functions/yahoo-chart.js)** — Legacy runtime fallback in case the static data is missing for a symbol. Best-effort only; its sources rarely work from datacenter IPs anymore.
 
 ### Frontend fallback chain
 
@@ -40,22 +44,27 @@ The browser's `fetchYahooSeries` tries sources in this order:
 3. **Direct Yahoo** — sometimes works in local dev.
 4. **`corsproxy.io`** — last-resort public proxy.
 
-In practice (1) handles every backtest. The remaining steps exist so the UI doesn't break if `data/` happens to be empty during the very first deploy.
+In practice (1) handles every backtest. The remaining steps exist so the UI doesn't break if `data/` happens to be empty during the very first deploy. If the baked data is more than a week stale (i.e. the nightly refresh is failing), the UI shows a staleness warning after each backtest.
 
 ## Setup (one-time)
 
-```bash
-# 1. Seed the data folder with initial JSON files. Run from your laptop —
-#    your residential IP isn't rate-limited by Yahoo.
-node scripts/fetch-data.js
+1. Sign up for a free Tiingo account at [tiingo.com](https://www.tiingo.com) and copy your API token from [tiingo.com/account/api/token](https://www.tiingo.com/account/api/token).
 
-# 2. Commit the data files and push.
-git add data/
-git commit -m "Seed initial stock data"
-git push
+2. Add it as a repo secret (paste the token when prompted):
+
+```bash
+gh secret set TIINGO_TOKEN
 ```
 
-After that, the GitHub Action takes over — it'll refresh and auto-commit nightly. You can also trigger a manual refresh anytime from the repo's **Actions** tab → "Refresh stock data" → "Run workflow."
+3. Trigger the first refresh — it fetches the full 10-year history for every symbol and commits it:
+
+```bash
+gh workflow run "Refresh stock data"
+```
+
+After that, the GitHub Action takes over — it'll refresh and auto-commit nightly. You can also run the script locally with `TIINGO_TOKEN=... node scripts/fetch-data.js`.
+
+> **Note:** Tiingo's free tier is licensed for personal/internal use and prohibits redistributing the data. Committing the JSON to a public repo is a gray area — keep the repo private if that matters to you.
 
 ## Development
 
@@ -67,6 +76,6 @@ python3 -m http.server 8000
 # → http://localhost:8000
 ```
 
-The pre-baked data path works locally as long as you've run `node scripts/fetch-data.js` at least once. No build step required — vanilla JS, no bundler.
+The pre-baked data path works locally as long as `data/` is populated (it's committed to the repo). No build step required — vanilla JS, no bundler.
 
 See [`guide.html`](guide.html) for a quick-start walkthrough of the UI and metrics.

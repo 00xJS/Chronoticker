@@ -30,7 +30,8 @@ jobs:
 
       - name: Fetch latest data
         env:
-          STOOQ_APIKEY: ${{ secrets.STOOQ_APIKEY }}
+          # Free Tiingo API token — https://www.tiingo.com
+          TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
         run: node scripts/fetch-data.js
 
       - name: Commit any changes

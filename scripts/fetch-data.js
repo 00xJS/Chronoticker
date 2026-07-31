@@ -3,18 +3,23 @@
 // symbol list and write one JSON file per symbol to ../data/.
 //
 // Run locally:
-//   node scripts/fetch-data.js
+//   TIINGO_TOKEN=... node scripts/fetch-data.js
 //
 // Run in CI:
-//   .github/workflows/refresh-data.yml invokes this on a schedule.
+//   .github/workflows/refresh-data.yml invokes this on a schedule with
+//   TIINGO_TOKEN provided as a repo secret.
 //
 // Sources, in priority order:
-//   1. Stooq        — keyless CSV. Works from residential and CI IPs.
-//                     (Cloud IPs get a captcha gate, so this script
-//                      only runs from non-cloud IPs by design.)
-//   2. Yahoo+crumb  — cookie + crumb auth flow. Fallback when Stooq
-//                     misses a symbol or rate-limits.
-//   3. Yahoo direct — last resort. Frequently 429s.
+//   1. Tiingo        — sanctioned free API, token auth. Works from any
+//                      IP including GitHub-hosted runners. Returns
+//                      dividend+split-adjusted closes (adjClose).
+//   2. Yahoo+crumb   — cookie + crumb auth flow. Emergency fallback;
+//                      429s from datacenter IPs and often elsewhere.
+//   3. Yahoo direct  — last resort. Frequently 429s.
+//
+// Stooq was the original source but now serves a JavaScript
+// proof-of-work challenge to all non-browser clients (since ~June
+// 2026), even with an apikey — it is no longer scriptable.
 //
 // Requires Node 18+ (built-in fetch). Zero external dependencies.
 
@@ -29,11 +34,10 @@ const SYMBOLS = [
 const RANGE_DAYS = 3653;   // ~10 years
 const RANGE_YAHOO = '10y'; // Yahoo's range param for the same window
 
-// Stooq apikey — bypasses the captcha gate that blocks cloud and
-// flagged residential IPs. Solve the captcha once at
-//   https://stooq.com/q/d/?s=aapl.us&get_apikey
-// and set as STOOQ_APIKEY env var (locally) or repo secret (CI).
-const STOOQ_APIKEY = process.env.STOOQ_APIKEY || '';
+// Tiingo API token — free tier at https://www.tiingo.com (50 req/hr,
+// 1000/day; this script uses 12/day). Set as TIINGO_TOKEN env var
+// (locally) or repo secret (CI).
+const TIINGO_TOKEN = process.env.TIINGO_TOKEN || '';
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
@@ -44,64 +48,54 @@ const BROWSER_HEADERS = {
     'Accept-Language': 'en-US,en;q=0.9',
 };
 
-function ymd(date) {
-    return `${date.getUTCFullYear()}` +
-           `${String(date.getUTCMonth() + 1).padStart(2, '0')}` +
-           `${String(date.getUTCDate()).padStart(2, '0')}`;
+function isoDate(date) {
+    return date.toISOString().slice(0, 10);
 }
 
 function snippet(s, n = 160) {
     return (s || '').replace(/\s+/g, ' ').slice(0, n);
 }
 
-// ── Source 1: Stooq ─────────────────────────────────────────────────
-async function fetchStooq(symbol) {
-    const end   = new Date();
-    const start = new Date(end.getTime() - RANGE_DAYS * 86400000);
-    const apikeyParam = STOOQ_APIKEY ? `&apikey=${encodeURIComponent(STOOQ_APIKEY)}` : '';
-    const url   = `https://stooq.com/q/d/l/?s=${symbol.toLowerCase()}.us` +
-                  `&d1=${ymd(start)}&d2=${ymd(end)}&i=d${apikeyParam}`;
+// ── Source 1: Tiingo ────────────────────────────────────────────────
+async function fetchTiingo(symbol) {
+    if (!TIINGO_TOKEN) throw new Error('Tiingo: TIINGO_TOKEN not set');
+
+    const start = new Date(Date.now() - RANGE_DAYS * 86400000);
+    // columns= keeps the response to the fields we read — full rows are
+    // ~6x larger and eat into the free tier's monthly bandwidth cap.
+    const url = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(symbol.toLowerCase())}/prices` +
+                `?startDate=${isoDate(start)}&resampleFreq=daily&format=json` +
+                `&columns=date,adjClose,close`;
 
     const res = await fetch(url, {
-        headers: { ...BROWSER_HEADERS, 'Referer': 'https://stooq.com/' },
+        headers: {
+            'Accept':        'application/json',
+            'Authorization': `Token ${TIINGO_TOKEN}`,
+        },
     });
-    if (!res.ok) throw new Error(`Stooq HTTP ${res.status}`);
-
-    const body = (await res.text()).trim();
-    if (!body) throw new Error('Stooq: empty body');
-    if (/^</.test(body)) throw new Error(`Stooq: HTML response: "${snippet(body)}"`);
-    if (/get your apikey/i.test(body)) {
-        throw new Error('Stooq: captcha gate (cloud-IP detected)');
-    }
-    if (/^no data/i.test(body) || body.length < 30) {
-        throw new Error(`Stooq: no-data: "${snippet(body)}"`);
+    if (!res.ok) {
+        const body = snippet(await res.text().catch(() => ''));
+        throw new Error(`Tiingo HTTP ${res.status}: "${body}"`);
     }
 
-    const lines  = body.split(/\r?\n/);
-    const header = lines[0].split(',').map(s => s.trim().toLowerCase());
-    const dateIdx  = header.indexOf('date');
-    const closeIdx = header.indexOf('close');
-    if (dateIdx < 0 || closeIdx < 0) {
-        throw new Error(`Stooq: bad header: "${snippet(body)}"`);
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) {
+        throw new Error(`Tiingo: empty result: "${snippet(JSON.stringify(rows))}"`);
     }
 
     const timestamps = [];
     const closes     = [];
-    for (let i = 1; i < lines.length; i++) {
-        const cells = lines[i].split(',');
-        const ds = cells[dateIdx];
-        const cs = cells[closeIdx];
-        if (!ds || !cs) continue;
-        const t = Math.floor(new Date(`${ds}T00:00:00Z`).getTime() / 1000);
-        const c = parseFloat(cs);
+    for (const row of rows) {
+        const t = Math.floor(Date.parse(row.date) / 1000);
+        const c = (row.adjClose != null) ? row.adjClose : row.close;
         if (Number.isFinite(t) && Number.isFinite(c)) {
             timestamps.push(t);
             closes.push(c);
         }
     }
-    if (!timestamps.length) throw new Error('Stooq: no rows parsed');
+    if (!timestamps.length) throw new Error('Tiingo: no rows parsed');
 
-    return { source: 'stooq', timestamps, closes };
+    return { source: 'tiingo', timestamps, closes };
 }
 
 // ── Source 2: Yahoo with cookie + crumb ─────────────────────────────
@@ -172,7 +166,12 @@ function parseYahoo(json, source) {
         const p = (adj && adj[i] != null) ? adj[i]
                 : (close && close[i] != null ? close[i] : null);
         if (p != null) {
-            timestamps.push(ts[i]);
+            // Yahoo stamps each daily bar at the session open (13:30/14:30
+            // UTC); Tiingo (and the old Stooq data) use midnight UTC. Floor
+            // to midnight so mixed-source data files stay alignable — the
+            // frontend intersects timestamps exactly. US sessions never
+            // cross a UTC day boundary, so flooring is safe.
+            timestamps.push(ts[i] - (ts[i] % 86400));
             closes.push(p);
         }
     }
@@ -182,7 +181,7 @@ function parseYahoo(json, source) {
 
 async function fetchSymbol(symbol) {
     const errors = [];
-    for (const fn of [fetchStooq, fetchYahooCrumb, fetchYahooDirect]) {
+    for (const fn of [fetchTiingo, fetchYahooCrumb, fetchYahooDirect]) {
         try {
             return await fn(symbol);
         } catch (err) {
@@ -196,7 +195,15 @@ async function main() {
     const dataDir = path.join(__dirname, '..', 'data');
     await fs.mkdir(dataDir, { recursive: true });
 
-    console.log(`Stooq apikey: ${STOOQ_APIKEY ? '✓ present' : '✗ missing (will hit captcha gate from cloud/flagged IPs)'}`);
+    console.log(`Tiingo token: ${TIINGO_TOKEN ? '✓ present' : '✗ missing (get a free one at https://www.tiingo.com and set TIINGO_TOKEN)'}`);
+
+    // In CI, a missing token must be a hard failure. Falling through to
+    // Yahoo could produce a green run that silently masks the missing
+    // secret (and commits mixed-provenance data).
+    if (!TIINGO_TOKEN && process.env.GITHUB_ACTIONS) {
+        console.error('Refusing to run in CI without TIINGO_TOKEN. Set it with: gh secret set TIINGO_TOKEN');
+        process.exit(1);
+    }
 
     let success = 0, failed = 0;
     const errors = [];
