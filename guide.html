@@ -5,12 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chronoticker · Quick-Start Guide</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0d1c">
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f5f6fb">
+    <meta name="theme-color" content="#0a0d1c">
     <style>
         /* ===== Observation Deck design tokens ===== */
+        /* Dark-only by design: no light theme, so `color-scheme: dark`
+           keeps native controls, scrollbars and pickers dark even when
+           the OS prefers light. */
         :root {
-            color-scheme: dark light;
+            color-scheme: dark;
 
             /* surfaces */
             --bg: #0a0d1c;
@@ -51,29 +53,6 @@
             --radius-pill: 999px;
         }
 
-        @media (prefers-color-scheme: light) {
-            :root {
-                --bg: #f5f6fb;
-                --bg-raised: #ffffff;
-                --card: #ffffff;
-                --card-chrome: #eceef7;
-                --border: #dcdeeb;
-                --border-hover: rgba(232, 121, 43, 0.6);
-                --text: #1b1f4b;
-                --muted: #4d5378;
-                --faint: #6a7095;
-                --accent: #c95f16;
-                --accent-deep: #a84c09;
-                --tag-bg: rgba(232, 121, 43, 0.10);
-                --tag-text: #a3540e;
-                --live: #148a4d;
-                --warn: #8a6200;
-                --down: #d64545;
-                --shadow: 0 10px 30px rgba(27, 31, 75, 0.10);
-                --btn-ink: #ffffff;
-            }
-        }
-
         *, *::before, *::after { box-sizing: border-box; }
 
         body {
@@ -98,7 +77,9 @@
                 radial-gradient(800px 480px at 90% 0%, rgba(194, 62, 140, 0.09), transparent 60%);
         }
 
-        ::selection { background: var(--accent-deep); color: #fff; }
+        /* --btn-ink, not white: white on the orange accent measures
+           2.9:1 and fails AA (the same rule the buttons follow). */
+        ::selection { background: var(--accent-deep); color: var(--btn-ink); }
         a:focus-visible {
             outline: 2px solid var(--accent);
             outline-offset: 3px;
@@ -321,6 +302,43 @@
             .stat-table tr:last-child { border-bottom: none; }
             .stat-table tr td:last-child,
             .stat-table tr th:last-child { border-bottom: 1px solid var(--border); }
+        }
+
+        /* Print: the screen theme is dark-only, but browsers evaluate the
+           print pass as a light context and drop background colors by
+           default — near-white text on white paper. Re-point the tokens
+           for paper; every rule reads them, so this restyles the whole
+           page. All values clear 4.5:1 on white. */
+        @media print {
+            :root {
+                color-scheme: light;
+                --bg: #ffffff;
+                --bg-raised: #ffffff;
+                --card: #ffffff;
+                --card-chrome: #eceef7;
+                --border: #c9ccdd;
+                --border-hover: #c9ccdd;
+                --text: #14173a;
+                --muted: #3f4468;
+                --faint: #55597e;
+                --accent: #a04a09;
+                --accent-deep: #a04a09;
+                --live: #0f6b3c;
+                --warn: #6b4c00;
+                --down: #a82424;
+                --tag-bg: transparent;
+                --tag-text: #7a3f08;
+                --shadow: none;
+                /* white, not the dark screen ink: on the darkened print
+                   accent that's 6.0:1 vs 3.1:1 for the step numbers */
+                --btn-ink: #ffffff;
+            }
+            body { background: #fff; padding: 0; }
+            body::before { display: none; }
+            .container { box-shadow: none; border: none; padding: 0; max-width: none; }
+            .back-link { display: none; }
+            details { background: transparent; }
+            details > p, details > ul { display: block; }
         }
     </style>
 </head>
