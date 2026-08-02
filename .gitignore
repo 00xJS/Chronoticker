@@ -3,5 +3,6 @@
 *.log
 node_modules/
 
-# Local-only theme handoff doc (see observation-deck repo)
-THEME-HANDOFF.md
+# Handoff docs are local-only and never committed (see observation-deck repo)
+*HANDOFF*.md
+*handoff*.md
