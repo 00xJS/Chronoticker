@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "updated": "2026-08-14",
+  "note": "Single source of truth for the instrument menu AND the fetch scripts. Adding an instrument here is the only edit needed — scripts/fetch-data.js reads it, and index.html builds its menu from it. `returns` is honest labelling: `total` means dividends are reinvested in the series, `price` means they are not. `calendar` drives the annualization factor.",
+  "groups": [
+    { "id": "megacap",  "label": "US megacaps",            "warn": "selection" },
+    { "id": "broad",    "label": "Broad market" },
+    { "id": "style",    "label": "Style & factor" },
+    { "id": "sector",   "label": "US sectors" },
+    { "id": "bond",     "label": "Bonds" },
+    { "id": "intl",     "label": "International" },
+    { "id": "real",     "label": "Real assets" },
+    { "id": "deep",     "label": "Deep history" }
+  ],
+  "warnings": {
+    "selection": "These ten names were added to the menu in 2026 because they are recognisable today. That is selection on the outcome: every one of them beat the S&P 500 over the last decade. Portfolios built from this group will look good for reasons that have nothing to do with your allocation."
+  },
+  "instruments": [
+    { "id": "AAPL",  "name": "Apple",                     "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "MSFT",  "name": "Microsoft",                 "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "NVDA",  "name": "Nvidia",                    "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "GOOGL", "name": "Alphabet",                  "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "AMZN",  "name": "Amazon",                    "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "META",  "name": "Meta",                      "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "TSLA",  "name": "Tesla",                     "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "NFLX",  "name": "Netflix",                   "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "AMD",   "name": "AMD",                       "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "AVGO",  "name": "Broadcom",                  "group": "megacap", "class": "equity", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "SPY",   "name": "S&P 500",                   "group": "broad",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo", "benchmark": true },
+    { "id": "QQQ",   "name": "Nasdaq 100",                "group": "broad",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "IWM",   "name": "Russell 2000 (small cap)",  "group": "broad",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "VTI",   "name": "US total market",           "group": "broad",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "RSP",   "name": "S&P 500 equal weight",      "group": "broad",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "VTV",   "name": "US value",                  "group": "style",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "VUG",   "name": "US growth",                 "group": "style",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "MTUM",  "name": "US momentum",               "group": "style",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "USMV",  "name": "US minimum volatility",     "group": "style",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "SCHD",  "name": "US dividend",               "group": "style",   "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "XLK",   "name": "Technology",                "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLF",   "name": "Financials",                "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLE",   "name": "Energy",                    "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLV",   "name": "Health care",               "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLY",   "name": "Consumer discretionary",    "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLP",   "name": "Consumer staples",          "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLI",   "name": "Industrials",               "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLB",   "name": "Materials",                 "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLU",   "name": "Utilities",                 "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLRE",  "name": "Real estate",               "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "XLC",   "name": "Communication services",    "group": "sector",  "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "AGG",   "name": "US aggregate bonds",        "group": "bond",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "TLT",   "name": "Long Treasuries (20y+)",    "group": "bond",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "IEF",   "name": "Intermediate Treasuries",   "group": "bond",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "LQD",   "name": "Investment-grade credit",   "group": "bond",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "HYG",   "name": "High-yield credit",         "group": "bond",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "TIP",   "name": "Inflation-protected (TIPS)","group": "bond",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "VEA",   "name": "Developed ex-US",           "group": "intl",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "VWO",   "name": "Emerging markets",          "group": "intl",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "GLD",   "name": "Gold",                      "group": "real",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "VNQ",   "name": "US REITs",                  "group": "real",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+    { "id": "DBC",   "name": "Broad commodities",         "group": "real",    "class": "etf", "calendar": "sessions", "returns": "total", "source": "tiingo" },
+
+    { "id": "USMKT", "name": "US total market (1926–)",   "group": "deep",    "class": "index", "calendar": "sessions", "returns": "total", "source": "ken-french",
+      "derived": true,
+      "note": "Cumulative daily total return of the CRSP value-weighted US market, rebuilt from Fama/French Mkt-RF + RF. Base 1.0 at 1926-07-01. Updated monthly by its publisher, so it lags the ETF data by up to six weeks." }
+  ],
+  "series": [
+    { "id": "RF",  "kind": "rate",     "name": "Risk-free rate (1-month T-bill)", "source": "ken-french + fred:DTB3",
+      "note": "Simple daily rate as a decimal. Fama/French RF 1926-07-01 onward, spliced with FRED DTB3 for dates after their last publication." },
+    { "id": "CPI", "kind": "deflator", "name": "US consumer price index",         "source": "fred:CPIAUCNS",
+      "note": "Monthly index level, not seasonally adjusted, 1913-01 onward. Interpolated to daily for deflating a series to real dollars." }
+  ]
+}
