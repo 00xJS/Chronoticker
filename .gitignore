@@ -6,3 +6,15 @@ node_modules/
 # Handoff docs are local-only and never committed (see observation-deck repo)
 *HANDOFF*.md
 *handoff*.md
+
+# Version-folder working copies of other projects (e.g. the DCA v4.0 tree)
+# kept here for reference while scoping the merge — never part of this repo.
+v[0-9]*/
+
+# Atomic-write temp files land inside data/, which the refresh workflow
+# stages wholesale. Without this a crashed write can be committed as a
+# truncated JSON file that the validation gate skips.
+data/*.tmp
+
+# Local agent/session config, not project code (matches the fleet convention).
+.claude/
