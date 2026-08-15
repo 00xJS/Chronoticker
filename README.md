@@ -1,81 +1,138 @@
 # Project: Chronoticker
 
-A stock portfolio backtester. Simulate any custom allocation across the last 6 months to 10 years and see how it would have performed against the S&P 500. Configure stocks, weights, lookback window, rebalance cadence, and an optional monthly DCA contribution. Outputs an equity curve, a sortable per-asset breakdown table (start/end prices, asset return, P/L, best performer), and headline performance stats: total return, CAGR, max drawdown, annualized volatility, Sharpe ratio, and best/worst day.
+A portfolio backtester. Describe an allocation — holdings, weights, money in, over what period — and it replays that portfolio against real daily closing prices, then tells you how much of the result was the allocation and how much was the start date.
+
+Static single-page app, vanilla JS, no build step, no backend, no runtime API calls. Prices are pre-baked into the repo and refreshed by scheduled GitHub Actions.
+
+## What it measures
+
+- **Two returns, kept apart.** Time-weighted growth rate (how the *strategy* did, immune to contribution timing) and money-weighted IRR (how *your dollars* did). Conflating these is the classic backtest lie.
+- **Risk on the strategy, not the balance.** Drawdown, volatility, Sharpe and best/worst day are computed on a per-unit NAV index, so a deposit can never look like a gain.
+- **Sharpe against real cash.** Excess return over the actual Treasury-bill rate of the day, not over an assumed 0%.
+- **Real or nominal.** Restate any run in today's purchasing power using CPI.
+- **Costs and fees.** Basis points per trade plus an annual fee, accrued daily.
+- **A base rate, not an anecdote.** Every run is replayed from every other start date the data allows, with a win rate and a distribution — plus an explicit warning when there is not enough independent history to make that number mean anything.
+- **Measured selection bias.** The tool computes and states how rigged its own megacap menu is instead of only warning about it in prose.
+- **A century of history.** A daily total-return US market index back to 1 July 1926, so 1929, 1973–74, 2000 and 2008 are inside the tool rather than outside it.
+- **All at once vs. spread out.** Same money, same window, with idle cash earning the real T-bill rate.
+
+Every run is a URL. Copy the link, get the run.
 
 ## Architecture
 
-Static single-page app (vanilla JS + Chart.js) deployed to Netlify, served entirely from CDN. Stock price data is **pre-baked into the repo** and refreshed nightly by a GitHub Action — no live API calls at runtime.
-
 ```
-GitHub Action (nightly, 02:00 UTC)
-    ↓ runs scripts/fetch-data.js
-    ↓ fetches the Tiingo API (free token, works from CI IPs)
-    ↓ writes data/AAPL.json, data/MSFT.json, … (one per symbol)
-    ↓ commits + pushes
-        ↓
-Netlify auto-deploys
-        ↓
-Browser reads /data/SYMBOL.json directly (same-origin, on CDN)
+GitHub Action (nightly 02:00 UTC)        GitHub Action (weekly, Sun 03:30 UTC)
+    ↓ scripts/fetch-data.js                  ↓ scripts/fetch-macro.js
+    ↓ Tiingo (token, 1990→today)             ↓ Ken French + FRED (keyless)
+    ↓ data/AAPL.json, data/SPY.json…         ↓ data/USMKT.json, RF.json, CPI.json
+                    ↓                                    ↓
+              scripts/verify-data.js  ← the gate; also writes data/manifest.json
+                    ↓
+              scripts/replay.mjs      ← goldens must still pass
+                    ↓
+              commit + push → Netlify auto-deploys
+                    ↓
+      Browser reads /data/*.json directly (same-origin, on CDN)
 ```
 
-### Why this architecture
+### Why pre-baked data
 
-The original design was a Netlify serverless function ([`netlify/functions/yahoo-chart.js`](netlify/functions/yahoo-chart.js)) that proxied Yahoo Finance live. It works locally, but keyless live stock-data sources have progressively locked out scripted access:
+Keyless live stock-data sources have progressively locked out scripted access: Yahoo rate-limits datacenter IPs, and Stooq put a JavaScript proof-of-work challenge in front of its CSV endpoint in June 2026 that blocks all non-browser clients. That killed the nightly refresh for eight weeks and nothing noticed, because nothing was checking the files on disk.
 
-- **Yahoo** rate-limits datacenter IP ranges (Netlify, GitHub runners, Cloudflare) with HTTP 429, and per the yfinance/yahoo-finance2 communities this extends to many residential IPs now too.
-- **Stooq** first required a captcha-solved apikey for cloud IPs (early 2026), then put a JavaScript proof-of-work challenge in front of its CSV endpoint (~June 2026) that blocks *all* non-browser clients, apikey or not. This is what killed the nightly refresh between 2026-06-06 and 2026-07-30.
-- Public CORS proxies routinely get IP-banned.
+The fix was two-part: fetch from **Tiingo** (sanctioned free API, token auth, works from any IP), and add a **validation gate** so a stalled upstream can never again pass as a green run. For a backtester this architecture is correct anyway — historical data does not change intraday.
 
-There is no reliable keyless path anymore. The current fix: fetch from **Tiingo**, a sanctioned free API with token auth that works identically from any IP. The free tier (50 requests/hour, 1,000/day) dwarfs this project's 12 requests/day, and returns 30+ years of dividend+split-adjusted daily closes. Data is fetched at refresh time and served as static JSON — for a backtester this is the correct architecture anyway, since historical data doesn't change intraday.
+### Files
 
-### Components
+| Path | What it is |
+|---|---|
+| [`index.html`](index.html) | The app. UI only — all maths lives in the engine. |
+| [`guide.html`](guide.html) | Plain-language explanation of every number and every omission. |
+| [`assets/engine.js`](assets/engine.js) | The simulation and measurement core. ES module, zero deps, imported by both the browser and the test harness — so the site and the tests cannot disagree. |
+| [`assets/deck.css`](assets/deck.css) | Observation Deck theme + components, shared by both pages. |
+| [`data/catalog.json`](data/catalog.json) | The instrument registry. **Single source of truth** — the menu and the fetch scripts both read it. |
+| [`data/manifest.json`](data/manifest.json) | Which instruments actually have data. Generated; the app falls back to probing if it is missing. |
+| [`scripts/fetch-data.js`](scripts/fetch-data.js) | Prices from Tiingo, 1990→today, schema v1. Refuses to shrink a file. |
+| [`scripts/fetch-macro.js`](scripts/fetch-macro.js) | The deep index, risk-free rate and CPI. Keyless. |
+| [`scripts/verify-data.js`](scripts/verify-data.js) | Validation gate: shape, consistency, catalog agreement, staleness. |
+| [`scripts/replay.mjs`](scripts/replay.mjs) | Golden scenarios + property tests. |
+| [`scripts/migrate-schema.js`](scripts/migrate-schema.js) | One-shot old→v1 migration. Idempotent. |
+| [`scripts/serve.mjs`](scripts/serve.mjs) | Local static server. |
+| [`tests/goldens.json`](tests/goldens.json) | Recorded output. A value moving is either an intended fix or a regression. |
 
-- **[`scripts/fetch-data.js`](scripts/fetch-data.js)** — Node 18+ script that fetches 10 years of daily adjusted-close prices for the canonical symbol list and writes one JSON file per symbol to `data/`. Zero dependencies. Tries Tiingo first, then Yahoo (cookie+crumb, then direct) as emergency fallbacks.
-- **[`.github/workflows/refresh-data.yml`](.github/workflows/refresh-data.yml)** — GitHub Action that runs the script daily at 02:00 UTC and auto-commits the refreshed JSON. Manually triggerable via the Actions tab. Needs the `TIINGO_TOKEN` repo secret.
-- **[`data/`](data/)** — One `SYMBOL.json` file per stock, structured as `{ symbol, updated, source, rangeDays, timestamps[], closes[] }`. Served as static assets by Netlify.
-- **[`netlify/functions/yahoo-chart.js`](netlify/functions/yahoo-chart.js)** — Legacy runtime fallback in case the static data is missing for a symbol. Best-effort only; its sources rarely work from datacenter IPs anymore.
+### Data schema v1
 
-### Frontend fallback chain
+```jsonc
+{
+  "schema": 1,
+  "id": "SPY", "name": "S&P 500",
+  "class": "etf",           // equity | etf | index | rate | deflator
+  "calendar": "sessions",   // drives the annualization factor
+  "returns": "total",       // total | price — honest labelling; GLD and DBC are price-only
+  "currency": "USD",
+  "source": "tiingo",
+  "updated": "2026-08-15T04:08:45Z",
+  "count": 2514, "firstDate": "2016-08-15", "lastDate": "2026-08-14",
+  "timestamps": [ /* unix SECONDS, midnight UTC, strictly ascending */ ],
+  "closes":     [ /* parallel array */ ]
+}
+```
 
-The browser's `fetchYahooSeries` tries sources in this order:
+## Development
 
-1. **`/data/SYMBOL.json`** — pre-baked static data (primary, bulletproof).
-2. **`/api/chart`** — serverless function (rarely succeeds in production from Netlify IPs).
-3. **Direct Yahoo** — sometimes works in local dev.
-4. **`corsproxy.io`** — last-resort public proxy.
+```bash
+node scripts/serve.mjs
+```
 
-In practice (1) handles every backtest. The remaining steps exist so the UI doesn't break if `data/` happens to be empty during the very first deploy. If the baked data is more than a week stale (i.e. the nightly refresh is failing), the UI shows a staleness warning after each backtest.
+Then open <http://localhost:8177>. Opening `index.html` as a `file://` URL no longer works — the app is an ES module and browsers refuse cross-origin module loads from the filesystem.
 
-## Setup (one-time)
+Before and after any change to the engine:
 
-1. Sign up for a free Tiingo account at [tiingo.com](https://www.tiingo.com) and copy your API token from [tiingo.com/account/api/token](https://www.tiingo.com/account/api/token).
+```bash
+node scripts/replay.mjs
+```
 
-2. Add it as a repo secret (paste the token when prompted):
+Ten golden scenarios and nine property tests. The load-bearing one is `contribution-invariance`: the size of your monthly deposit must have *zero* effect on growth rate, volatility, Sharpe or drawdown. That single assertion is the entire bug class this rebuild fixed, and it fails loudly on the old implementation.
+
+If a change is an intended fix, re-record and say which values moved and why:
+
+```bash
+node scripts/replay.mjs --record
+```
+
+Check the data at any time:
+
+```bash
+node scripts/verify-data.js
+```
+
+## Setup
+
+1. Free Tiingo account at [tiingo.com](https://www.tiingo.com), token from [tiingo.com/account/api/token](https://www.tiingo.com/account/api/token).
+
+2. Add it as a repo secret:
 
 ```bash
 gh secret set TIINGO_TOKEN
 ```
 
-3. Trigger the first refresh — it fetches the full 10-year history for every symbol and commits it:
+3. Backfill. The catalog lists ~41 instruments and only 12 have ever been fetched, so the first run pulls a lot:
 
 ```bash
 gh workflow run "Refresh stock data"
 ```
 
-After that, the GitHub Action takes over — it'll refresh and auto-commit nightly. You can also run the script locally with `TIINGO_TOKEN=... node scripts/fetch-data.js`.
-
-> **Note:** Tiingo's free tier is licensed for personal/internal use and prohibits redistributing the data. Committing the JSON to a public repo is a gray area — keep the repo private if that matters to you.
-
-## Development
-
-To run locally:
+4. The macro series need no secret:
 
 ```bash
-# Open index.html in any browser, or:
-python3 -m http.server 8000
-# → http://localhost:8000
+gh workflow run "Refresh macro data"
 ```
 
-The pre-baked data path works locally as long as `data/` is populated (it's committed to the repo). No build step required — vanilla JS, no bundler.
+## Data licensing — unresolved, read before making this public
 
-See [`guide.html`](guide.html) for a quick-start walkthrough of the UI and metrics.
+Two of the three sources carry redistribution questions that committing data to a public repo does not obviously satisfy:
+
+- **Tiingo's free tier** is documented as internal, personal use — [their terms](https://app.tiingo.com/tos/) describe the data as for your own use and not for sharing with another person or organization. Serving it publicly as static JSON is at best a gray area, and it scales with the instrument count.
+- **The Fama/French data library** is free to download and marked `Copyright Eugene F. Fama and Kenneth R. French`, with no explicit redistribution grant. What is committed here is a derived cumulative index rather than the source file, which is not the same thing as permission.
+- **FRED** series used here are US government statistics and the least constrained of the three, but attribution is expected.
+
+Options, none of which this repo has picked for you: pay for redistribution rights, keep the repo and site private, move the committed layer to sources that clearly permit redistribution, or have visitors supply their own API token. Worth resolving deliberately.

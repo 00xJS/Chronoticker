@@ -2,19 +2,19 @@ name: Refresh stock data
 
 on:
   schedule:
-    # Daily at 02:00 UTC — well after US markets close (21:00 UTC), so
-    # the previous day's close is settled and Yahoo's data is current.
+    # Daily at 02:00 UTC — well after the US close (21:00 UTC), so the
+    # previous session has settled.
     - cron: '0 2 * * *'
-  # Manual trigger via the Actions tab.
   workflow_dispatch:
 
 permissions:
-  # Required to commit refreshed JSON back to the repo.
   contents: write
-# Note: actions/checkout@v4 and actions/setup-node@v4 emit a Node 20
-# deprecation warning until their maintainers ship Node 24 builds.
-# This is a soft warning — runs still succeed. Re-evaluate the env var
-# story closer to GitHub's June 2026 forced cutover.
+
+# Two workflows now write to data/ on a schedule. Without a concurrency
+# group they can interleave and one will push onto a stale ref.
+concurrency:
+  group: data-write
+  cancel-in-progress: false
 
 jobs:
   refresh:
@@ -28,20 +28,33 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Fetch latest data
+      - name: Fetch latest prices
         env:
           # Free Tiingo API token — https://www.tiingo.com
           TIINGO_TOKEN: ${{ secrets.TIINGO_TOKEN }}
         run: node scripts/fetch-data.js
 
+      # The gate that would have caught the June 2026 outage. A fetch script
+      # exiting 0 is not evidence the data is good; this reads what actually
+      # landed on disk. It also writes data/manifest.json, so it must run
+      # before the commit step.
+      - name: Verify data
+        run: node scripts/verify-data.js
+
+      # Replaying the goldens here means a bad data refresh cannot silently
+      # change what the site reports.
+      - name: Replay goldens
+        run: node scripts/replay.mjs
+
       - name: Commit any changes
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/
-          # Only commit if something actually changed (prevents empty
-          # commits on weekends / market-closed days when prices aren't
-          # updated).
+          # A second scheduled writer exists now, so never assume this job
+          # still holds the tip it checked out.
+          git pull --rebase --autostash origin main
+          # Only the data files themselves — never a half-written *.tmp.
+          git add data/*.json
           if git diff --staged --quiet; then
             echo "No data changes — skipping commit."
           else
