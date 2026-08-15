@@ -1,0 +1,184 @@
+{
+  "recorded": "2026-08-15T06:01:15.307Z",
+  "engine": "assets/engine.js",
+  "note": "Regenerate with `node scripts/replay.mjs --record`. A value moving here is either an intended fix (say which, in the commit message) or a regression. There is no third option.",
+  "scenarios": {
+    "G1-default-1y": {
+      "note": "The app default. No contributions, so every value here must be identical to the pre-fix implementation forever.",
+      "values": {
+        "bars": 253,
+        "finalValue": 11866.558728,
+        "contributed": 10000,
+        "contributions": 1,
+        "costsPaid": 0,
+        "feesPaid": 0,
+        "twrCagr": 0.1862397914,
+        "twrTotal": 0.1866558728,
+        "maxDD": -0.190163635,
+        "vol": 0.2009366383,
+        "sharpe": 0.9525994995,
+        "sortino": 1.3673431449,
+        "best": 0.0376376759,
+        "worst": -0.0416650848,
+        "irr": 0.1862397233,
+        "from": "2025-08-13",
+        "to": "2026-08-14"
+      }
+    },
+    "G2-spy-10y-dca": {
+      "note": "THE FIX. Pre-fix this reported CAGR 33.20% and Sharpe 1.62 on a dollar curve fattened by deposits. True time-weighted values are ~15.01% and ~0.87.",
+      "changedByTheFix": [
+        "twrCagr",
+        "vol",
+        "sharpe",
+        "maxDD",
+        "contributed"
+      ],
+      "values": {
+        "bars": 2514,
+        "finalValue": 181179.233143,
+        "contributed": 70000,
+        "contributions": 121,
+        "costsPaid": 0,
+        "feesPaid": 0,
+        "twrCagr": 0.153357612,
+        "twrTotal": 3.1627985076,
+        "maxDD": -0.3369994047,
+        "vol": 0.179570413,
+        "sharpe": 0.8866993158,
+        "sortino": 1.2510010207,
+        "best": 0.1050193361,
+        "worst": -0.1094237338,
+        "irr": 0.160039844
+      }
+    },
+    "G3-mag7-5y-quarterly": {
+      "note": "No contributions — must stay identical to the pre-fix implementation.",
+      "values": {
+        "bars": 1256,
+        "finalValue": 28473.483805,
+        "contributed": 10000,
+        "contributions": 1,
+        "costsPaid": 0,
+        "feesPaid": 0,
+        "twrCagr": 0.2326813096,
+        "twrTotal": 1.8473483805,
+        "maxDD": -0.4887528829,
+        "vol": 0.2996009128,
+        "sharpe": 0.8509900405,
+        "sortino": 1.2488441242,
+        "best": 0.1451302133,
+        "worst": -0.0696349214,
+        "irr": 0.2326813124
+      }
+    },
+    "G4-guide-scenario-zero-initial": {
+      "note": "guide.html scenario 4 verbatim (\"set initial to $0\"). Pre-fix this printed CAGR 53,860.88% and NaN for volatility and best/worst day. The NAV index now starts at the first funding event.",
+      "changedByTheFix": [
+        "everything — this configuration used to produce NaN"
+      ],
+      "values": {
+        "bars": 1236,
+        "finalValue": 48056.112066,
+        "contributed": 30000,
+        "contributions": 60,
+        "costsPaid": 0,
+        "feesPaid": 0,
+        "twrCagr": 0.1345598067,
+        "twrTotal": 0.860356458,
+        "maxDD": -0.2449719242,
+        "vol": 0.1730175977,
+        "sharpe": 0.8186091376,
+        "sortino": 1.1886578304,
+        "best": 0.1050193361,
+        "worst": -0.0585429476,
+        "irr": 0.1945222014,
+        "firstFundedIndex": 20
+      }
+    },
+    "G5-costed-rebalance": {
+      "note": "Quarterly rebalancing with 10bps costs and a 20bps annual fee. Rebalance costs come out of the fund and must reduce the time-weighted return; purchase costs must not.",
+      "values": {
+        "bars": 1256,
+        "finalValue": 38884.764531,
+        "contributed": 10000,
+        "contributions": 1,
+        "costsPaid": 48.658485,
+        "feesPaid": 204.809177,
+        "twrCagr": 0.3121827959,
+        "twrTotal": 2.892368822,
+        "maxDD": -0.4137065519,
+        "vol": 0.3014660395,
+        "sharpe": 1.0556409255,
+        "sortino": 1.5965952805,
+        "best": 0.1464385546,
+        "worst": -0.0679578085,
+        "irr": 0.3119203938
+      }
+    },
+    "G6-real-vs-nominal": {
+      "note": "Same run measured in nominal and in constant final-year dollars. The gap is the inflation of the window.",
+      "values": {
+        "nominalCagr": 0.153357612,
+        "realCagr": 0.116389652,
+        "inflationDrag": 0.0369679599,
+        "cpiStart": 241.1105,
+        "cpiEnd": 333.918
+      }
+    },
+    "G7-sharpe-with-real-rf": {
+      "note": "Sharpe assuming cash yields nothing, versus Sharpe against actual T-bills. The first number is the flattering one and is what the app used to print.",
+      "values": {
+        "sharpeAssumingZeroRf": 0.8866993158,
+        "sharpeVsTbills": 0.7522827095,
+        "averageRfAnnual": 0.0241322127
+      }
+    },
+    "G8-base-rate-sweep": {
+      "note": "Mag 7 versus SPY over every 3-year window the data allows. With only 10 years baked, this rests on very few independent windows — the harness records that count so the thinness is never hidden.",
+      "changedByTheFix": [
+        "medianMargin, worstMargin, bestMargin — swept windows are now exactly `windowBars` bars (756) instead of windowBars+1 (757). The old convention put the user's own window one step beyond the swept range, so it could never be sampled; fixing that also shortened every window by one bar. count/wins/winRate/independentWindows are unchanged. medianMargin additionally moved because it now uses a true median rather than the upper-middle element."
+      ],
+      "values": {
+        "count": 84,
+        "wins": 84,
+        "winRate": 1,
+        "medianMargin": 0.2247642507,
+        "worstMargin": 0.091037945,
+        "bestMargin": 0.5609549312,
+        "independentWindows": 3
+      }
+    },
+    "G9-duel": {
+      "note": "Lump sum versus twelve monthly instalments, same money, same window, idle cash earning real T-bills.",
+      "changedByTheFix": [
+        "doseIrr — the dose side recorded each tranche as the outflow while also crediting the investor the T-bill interest earned on capital that schedule said had not been paid in yet, which inflated the money-weighted return. Under this comparison's fairness contract the whole sum is committed on day one, so the outflow is now the full amount at bar 0. With a single outflow the money-weighted and time-weighted returns coincide, which is why doseIrr now equals doseCagr exactly."
+      ],
+      "values": {
+        "lumpFinal": 223573.193491,
+        "doseFinal": 230373.9005,
+        "lumpCagr": 0.1324668806,
+        "doseCagr": 0.1392712827,
+        "lumpMaxDD": -0.2449719242,
+        "doseMaxDD": -0.1875538829,
+        "lumpIrr": 0.132466826,
+        "doseIrr": 0.1392711905,
+        "cashEarnsRf": true
+      }
+    },
+    "G10-deep-history-usmkt": {
+      "note": "The whole point of the deep spine: a window containing 1929, 1973 and 2008. If this run ever stops showing an ~85% Depression drawdown, the upstream parse has broken.",
+      "values": {
+        "from": "1926-07-01",
+        "to": "2026-06-30",
+        "bars": 26274,
+        "cagr": 0.1027347558,
+        "maxDD": -0.8407399476,
+        "ddFrom": "1929-09-03",
+        "ddTo": "1932-07-08",
+        "worst": -0.174099998,
+        "worstAt": "1987-10-19"
+      }
+    }
+  }
+}
