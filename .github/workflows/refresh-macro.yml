@@ -1,0 +1,56 @@
+name: Refresh macro data
+
+# The deep spine: a century of daily US market total returns, the actual
+# risk-free rate, and the CPI. Separate from the price refresh because it
+# needs no secret and its upstreams publish monthly, so running it nightly
+# would be noise. Weekly is comfortably often enough to pick up a monthly
+# release within days of it landing.
+
+on:
+  schedule:
+    # Sundays at 03:30 UTC — staggered well clear of the 02:00 price job.
+    - cron: '30 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-write
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No secret required — both sources are keyless.
+      - name: Fetch macro series
+        run: node scripts/fetch-macro.js
+
+      - name: Verify data
+        run: node scripts/verify-data.js
+
+      - name: Replay goldens
+        run: node scripts/replay.mjs
+
+      - name: Commit any changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase --autostash origin main
+          # Only the data files themselves — never a half-written *.tmp.
+          git add data/*.json
+          if git diff --staged --quiet; then
+            echo "No macro changes — skipping commit."
+          else
+            git commit -m "Refresh macro data $(date -u +%Y-%m-%d)"
+            git push
+          fi
