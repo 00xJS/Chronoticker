@@ -67,7 +67,9 @@ The fix was two-part: fetch from **Tiingo** (sanctioned free API, token auth, wo
   "id": "SPY", "name": "S&P 500",
   "class": "etf",           // equity | etf | index | rate | deflator
   "calendar": "sessions",   // drives the annualization factor
-  "returns": "total",       // total | price — honest labelling; GLD and DBC are price-only
+  "returns": "total",       // total | price — honest labelling, so a price index is never
+                            // presented as a total-return series. Everything in the catalog
+                            // today is fed adjusted closes and is therefore `total`.
   "currency": "USD",
   "source": "tiingo",
   "updated": "2026-08-15T04:08:45Z",
@@ -91,7 +93,9 @@ Before and after any change to the engine:
 node scripts/replay.mjs
 ```
 
-Ten golden scenarios and nine property tests. The load-bearing one is `contribution-invariance`: the size of your monthly deposit must have *zero* effect on growth rate, volatility, Sharpe or drawdown. That single assertion is the entire bug class this rebuild fixed, and it fails loudly on the old implementation.
+Ten golden scenarios and thirteen property tests. The load-bearing one is `contribution-invariance`: a deposit must not *mechanically* inflate growth rate, volatility, Sharpe or drawdown. That is the entire bug class this rebuild fixed, and it fails loudly on the old implementation.
+
+Its counterpart `unrebalanced-contributions-are-a-partial-rebalance` pins the opposite where the opposite is right. Contributions are bought at your target weights, so paying into a basket you never rebalance pulls it back toward target — a real change to the strategy, worth several percentage points a year on a concentrated basket. The app now says so on screen. The two assertions exist so that neither is ever "fixed" into the other.
 
 If a change is an intended fix, re-record and say which values moved and why:
 

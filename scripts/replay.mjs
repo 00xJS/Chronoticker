@@ -14,10 +14,16 @@
 //
 // The PROPERTY tests below are the more important half. A recorded number
 // only proves the code still does what it did; a property proves it does
-// the right thing. The load-bearing one is `contribution-invariance`: the
-// size of your monthly deposit must have literally zero effect on CAGR,
-// volatility, Sharpe and drawdown. That single assertion is the entire
-// bug class, and it fails loudly on the old implementation.
+// the right thing. The load-bearing one is `contribution-invariance`: a
+// deposit must not mechanically inflate CAGR, volatility, Sharpe or
+// drawdown. That is the entire original bug class, and it fails loudly on
+// the old implementation.
+//
+// Its counterpart, `unrebalanced-contributions-are-a-partial-rebalance`,
+// asserts the opposite where the opposite is correct: contributions buy at
+// target weights, so in a drifting unrebalanced basket they genuinely change
+// the strategy and the time-weighted return SHOULD move. Both are pinned so
+// that neither gets "fixed" into the other.
 
 import fs from 'fs/promises';
 import path from 'path';
@@ -282,21 +288,47 @@ const SCENARIOS = [
 const PROPERTIES = [
     {
         id: 'contribution-invariance',
-        why: 'THE regression test for the original defect. Time-weighted metrics describe the strategy, so the size of the monthly deposit must not move them at all. On the pre-fix code this fails on every metric.',
-        needs: ['SPY'],
+        why: 'THE regression test for the original defect. A deposit must not mechanically inflate a time-weighted metric. Exact where the portfolio composition is unaffected by the purchase: a single asset, and a multi-asset basket rebalanced on the contribution cadence. On the pre-fix code both cases fail on every metric.',
+        needs: ['SPY', 'AAPL', 'MSFT', 'NVDA'],
         async run(assert) {
-            const { aligned, list } = await block(['SPY'], 3653);
-            const ann = annualizationFor(list);
-            const runs = [0, 100, 500, 5000].map(c => {
-                const sim = simulate(aligned, { weights: { SPY: 100 }, initial: 10000, contribution: c });
-                return metrics(sim.nav, aligned.dates, { annualization: ann });
-            });
-            for (const key of ['cagr', 'vol', 'sharpe', 'maxDD', 'best', 'worst', 'twr']) {
-                for (let i = 1; i < runs.length; i++) {
-                    assert(Math.abs(runs[i][key] - runs[0][key]) < 1e-12,
-                        `${key} moved with contribution size: ${runs[0][key]} vs ${runs[i][key]}`);
-                }
+            const keys = ['cagr', 'vol', 'sharpe', 'maxDD', 'best', 'worst', 'twr'];
+
+            const single = await block(['SPY'], 3653);
+            const singleRuns = [0, 100, 500, 5000].map(c => metrics(
+                simulate(single.aligned, { weights: { SPY: 100 }, initial: 10000, contribution: c }).nav,
+                single.aligned.dates, { annualization: annualizationFor(single.list) }));
+            for (const key of keys) for (let i = 1; i < singleRuns.length; i++) {
+                assert(Math.abs(singleRuns[i][key] - singleRuns[0][key]) < 1e-12,
+                    `single asset: ${key} moved with contribution size (${singleRuns[0][key]} vs ${singleRuns[i][key]})`);
             }
+
+            // Multi-asset, rebalanced on the same cadence as the contribution:
+            // composition is restored either way, so this must be exact too.
+            const multi = await block(['AAPL', 'MSFT', 'NVDA'], 3653);
+            const w = { AAPL: 40, MSFT: 30, NVDA: 30 };
+            const multiRuns = [0, 500, 5000].map(c => metrics(
+                simulate(multi.aligned, { weights: w, initial: 10000, contribution: c, contributionDays: 30, rebalanceDays: 30 }).nav,
+                multi.aligned.dates, { annualization: annualizationFor(multi.list) }));
+            for (const key of keys) for (let i = 1; i < multiRuns.length; i++) {
+                assert(Math.abs(multiRuns[i][key] - multiRuns[0][key]) < 1e-10,
+                    `rebalanced multi-asset: ${key} moved with contribution size (${multiRuns[0][key]} vs ${multiRuns[i][key]})`);
+            }
+        },
+    },
+    {
+        id: 'unrebalanced-contributions-are-a-partial-rebalance',
+        why: 'The counterpart to the above, asserted so nobody "fixes" it later. Contributions buy at TARGET weights, so feeding money into a drifting unrebalanced basket pulls it back toward target and genuinely changes the strategy. The time-weighted return SHOULD move here — the number is real economics, not leakage, and the UI is required to say so.',
+        needs: ['AAPL', 'MSFT', 'NVDA'],
+        async run(assert) {
+            const { aligned, list } = await block(['AAPL', 'MSFT', 'NVDA'], 3653);
+            const w = { AAPL: 40, MSFT: 30, NVDA: 30 };
+            const ann = annualizationFor(list);
+            const none = metrics(simulate(aligned, { weights: w, initial: 10000 }).nav, aligned.dates, { annualization: ann });
+            const heavy = metrics(simulate(aligned, { weights: w, initial: 10000, contribution: 5000 }).nav, aligned.dates, { annualization: ann });
+            assert(heavy.cagr < none.cagr,
+                `expected contributions to drag the growth rate toward target weights, got ${heavy.cagr} vs ${none.cagr}`);
+            assert(none.cagr - heavy.cagr > 0.005,
+                `effect implausibly small (${none.cagr - heavy.cagr}) — check the purchase is still at target weights`);
         },
     },
     {
@@ -341,6 +373,36 @@ const PROPERTIES = [
             assert(Math.abs(r3) < 1e-6, `flat should be 0%: got ${r3}`);
             const r4 = xirr([{ t: t0, amount: -100 }, { t: t0 + y, amount: 50 }]);
             assert(Math.abs(r4 + 0.5) < 1e-6, `-50%: got ${r4}`);
+        },
+    },
+    {
+        id: 'irr-is-solved-to-rate-precision',
+        why: 'With a single cash flow the money-weighted and time-weighted returns are the same number, so their gap measures the solver\'s accuracy directly. It used to converge on the size of the NPV, which made precision depend on how large the cash flows were; it now converges on the rate.',
+        needs: ['SPY'],
+        async run(assert) {
+            const { aligned } = await block(['SPY'], 3653);
+            const sim = simulate(aligned, { weights: { SPY: 100 }, initial: 10000 });
+            const m = metrics(sim.nav, aligned.dates, { annualization: 252 });
+            const irr = xirr(sim.flows);
+            assert(irr != null, 'no IRR returned');
+            assert(Math.abs(irr - m.cagr) < 1e-10, `gap ${Math.abs(irr - m.cagr)} between IRR and CAGR`);
+
+            // Same portfolio scaled up a thousandfold must solve just as precisely.
+            const big = simulate(aligned, { weights: { SPY: 100 }, initial: 10000000 });
+            const bigIrr = xirr(big.flows);
+            assert(Math.abs(bigIrr - m.cagr) < 1e-10, `scale changed precision: gap ${Math.abs(bigIrr - m.cagr)}`);
+        },
+    },
+    {
+        id: 'irr-survives-a-century-of-contributions',
+        why: 'The deep-history preset with a monthly contribution is an ordinary thing to ask for, and it returned no money-weighted return at all: over a 100-year horizon the bracket endpoints overflow to +/-Infinity and their sum is NaN, which the solver read as "no root".',
+        needs: ['USMKT'],
+        async run(assert) {
+            const { aligned } = await block(['USMKT'], null);
+            const sim = simulate(aligned, { weights: { USMKT: 100 }, initial: 0, contribution: 500 });
+            const irr = xirr(sim.flows);
+            assert(irr != null, 'IRR came back null on a century-long contribution schedule');
+            assert(Number.isFinite(irr) && irr > 0 && irr < 1, `implausible IRR: ${irr}`);
         },
     },
     {

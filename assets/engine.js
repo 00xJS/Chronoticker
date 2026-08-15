@@ -9,12 +9,23 @@
 // A portfolio you keep adding money to has two different returns, and
 // conflating them is the defect this module exists to fix:
 //
-//   Time-weighted (TWR/CAGR)  — how good was the STRATEGY? Contributions
-//                               must not affect it. A deposit is not a
-//                               gain, and depositing during a crash must
-//                               not make the drawdown look shallower.
+//   Time-weighted (TWR/CAGR)  — how good was the STRATEGY? A deposit is
+//                               not a gain, and depositing during a crash
+//                               must not make the drawdown look shallower.
 //   Money-weighted (IRR)      — how did YOUR MONEY do? Timing of every
 //                               contribution matters, by design.
+//
+// One honest qualification on the first of those. Contributions cannot
+// MECHANICALLY inflate a time-weighted number here — that was the defect.
+// But they are bought at the TARGET weights, so in a multi-asset portfolio
+// that is drifting because you never rebalance, each contribution nudges it
+// back toward target. That is a genuine change to the strategy, not an
+// artifact, and the time-weighted return moves with it. Measured on a
+// 40/30/30 basket over ten years, a $5,000 monthly contribution lowers the
+// growth rate from 48.35% to 45.47% purely by holding the winner's weight
+// down. The invariance is therefore exact for a single asset, and exact for
+// a multi-asset basket rebalanced on the contribution cadence; elsewhere the
+// difference is real economics and the UI says so.
 //
 // We get both by running the portfolio as a fund. Every dollar that
 // enters buys units at that day's net asset value, so the fund gets
@@ -431,30 +442,49 @@ const stdev = (a, m) => Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.le
  * one that is a few microseconds slower. Returns null when no sign change
  * exists (e.g. everything was lost).
  */
-export function xirr(flows, { lo = -0.9999, hi = 100, tol = 1e-7, maxIter = 300 } = {}) {
+export function xirr(flows, { lo = -0.9999, hi = 100, tol = 1e-12, maxIter = 200 } = {}) {
     if (flows.length < 2) return null;
     const t0 = flows[0].t;
     const npv = rate => flows.reduce((s, f) =>
         s + f.amount / Math.pow(1 + rate, (f.t - t0) / YEAR_MS), 0);
 
-    // Over a long horizon the bracket endpoints overflow: at rate ≈ -1 the
-    // discount factor for a 100-year flow underflows to 0 and the NPV comes
-    // back as +Infinity. That is the mathematically correct SIGN — as the
-    // rate approaches -100%, any positive future flow dominates — so bracket
-    // on sign rather than on a product, and only bail on a genuine NaN.
-    // Rejecting infinities here made every century-long run report no return.
-    let a = lo, b = hi, fa = npv(a), fb = npv(b);
-    if (Number.isNaN(fa) || Number.isNaN(fb)) return null;
-    const sa = Math.sign(fa), sb = Math.sign(fb);
-    if (sa === 0) return a;
-    if (sb === 0) return b;
-    if (sa === sb) return null;      // no root in the bracket
+    // Find a bracket by scanning, rather than assuming the extremes give one.
+    //
+    // Over a long horizon the extremes are unusable: at rate ≈ -1 the discount
+    // factor for a 100-year flow underflows to zero, so positive flows divide
+    // to +Infinity and negative ones to -Infinity, and their sum is NaN. A
+    // century-long run with monthly contributions — the deep-history preset
+    // with a contribution, i.e. an ordinary thing to ask for — therefore
+    // reported no money-weighted return at all. Walking a ladder of candidate
+    // rates and taking the first adjacent pair with finite opposite signs
+    // works for both that case and the ordinary ones.
+    const ladder = [lo, -0.999, -0.99, -0.9, -0.75, -0.5, -0.25, -0.1, 0,
+                    0.1, 0.25, 0.5, 1, 2, 5, 10, 25, hi];
+    let a = null, b = null, fa = 0, fb = 0;
+    let prevRate = null, prevNpv = null;
+    for (const rate of ladder) {
+        const v = npv(rate);
+        if (!Number.isFinite(v)) { prevRate = null; prevNpv = null; continue; }
+        if (v === 0) return rate;
+        if (prevNpv !== null && Math.sign(v) !== Math.sign(prevNpv)) {
+            a = prevRate; fa = prevNpv; b = rate; fb = v;
+            break;
+        }
+        prevRate = rate; prevNpv = v;
+    }
+    if (a === null) return null;     // no sign change anywhere on the ladder
+    const sa = Math.sign(fa);
 
+    // Converge on the RATE, not on the size of the NPV. An NPV tolerance
+    // means the answer's precision depends on how big the cash flows are —
+    // the same portfolio scaled up by 1000x would resolve to a coarser rate.
+    // Bisection needs only ~50 halvings to pin the rate to 1e-12 from any
+    // starting bracket, so this costs nothing and makes the result stable.
     for (let i = 0; i < maxIter; i++) {
         const mid = (a + b) / 2;
         const fm = npv(mid);
         if (Number.isNaN(fm)) return null;
-        if (Math.abs(fm) < tol || (b - a) / 2 < tol) return mid;
+        if (fm === 0 || (b - a) / 2 < tol) return mid;
         if (Math.sign(fm) === sa) a = mid; else b = mid;
     }
     return (a + b) / 2;

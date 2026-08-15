@@ -1,5 +1,5 @@
 {
-  "recorded": "2026-08-15T06:01:15.307Z",
+  "recorded": "2026-08-15T23:53:03.757Z",
   "engine": "assets/engine.js",
   "note": "Regenerate with `node scripts/replay.mjs --record`. A value moving here is either an intended fix (say which, in the commit message) or a regression. There is no third option.",
   "scenarios": {
@@ -20,7 +20,7 @@
         "sortino": 1.3673431449,
         "best": 0.0376376759,
         "worst": -0.0416650848,
-        "irr": 0.1862397233,
+        "irr": 0.1862397914,
         "from": "2025-08-13",
         "to": "2026-08-14"
       }
@@ -49,7 +49,7 @@
         "sortino": 1.2510010207,
         "best": 0.1050193361,
         "worst": -0.1094237338,
-        "irr": 0.160039844
+        "irr": 0.1600398111
       }
     },
     "G3-mag7-5y-quarterly": {
@@ -69,7 +69,7 @@
         "sortino": 1.2488441242,
         "best": 0.1451302133,
         "worst": -0.0696349214,
-        "irr": 0.2326813124
+        "irr": 0.2326813096
       }
     },
     "G4-guide-scenario-zero-initial": {
@@ -92,7 +92,7 @@
         "sortino": 1.1886578304,
         "best": 0.1050193361,
         "worst": -0.0585429476,
-        "irr": 0.1945222014,
+        "irr": 0.1945221693,
         "firstFundedIndex": 20
       }
     },
@@ -113,7 +113,7 @@
         "sortino": 1.5965952805,
         "best": 0.1464385546,
         "worst": -0.0679578085,
-        "irr": 0.3119203938
+        "irr": 0.3119203621
       }
     },
     "G6-real-vs-nominal": {
@@ -161,8 +161,8 @@
         "doseCagr": 0.1392712827,
         "lumpMaxDD": -0.2449719242,
         "doseMaxDD": -0.1875538829,
-        "lumpIrr": 0.132466826,
-        "doseIrr": 0.1392711905,
+        "lumpIrr": 0.1324668806,
+        "doseIrr": 0.1392712827,
         "cashEarnsRf": true
       }
     },

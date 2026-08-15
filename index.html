@@ -905,8 +905,20 @@ async function renderNotices(ctx, ids) {
             ${CATALOG.warnings?.selection ? '' : ''}</div>`);
     }
 
-    if (out.length) host.innerHTML = out.join('');
-    else host.innerHTML = '';
+    // Contributions buy at the target weights, so feeding money into a basket
+    // you never rebalance quietly pulls it back toward target. That is a real
+    // effect on the growth rate — several percentage points a year on a
+    // concentrated basket — and it is invisible unless the page says it.
+    if (ids.length > 1 && ctx.cfg.contribution > 0 && !ctx.cfg.rebalance) {
+        out.push(`<div class="notice info"><span class="head">Your contributions are quietly rebalancing you</span>
+            You are adding money at your target weights but never rebalancing. Each contribution
+            therefore buys proportionally more of whatever has lagged, which pulls the portfolio back
+            toward target — <strong>a bigger contribution is a stronger pull</strong>, and it changes
+            the growth rate above, not just the final value. Set a rebalance cadence to separate the
+            two effects, or set contributions to zero to see the allocation drift on its own.</div>`);
+    }
+
+    host.innerHTML = out.join('');
 }
 
 function renderBreakdown(sim, cfg) {
@@ -1073,7 +1085,7 @@ async function runDuel(ctx) {
 }
 
 async function renderDuelSweep(ctx, weights) {
-    const { list, ann, cfg, aligned } = ctx;
+    const { list, ann, cfg, aligned, rfDaily } = ctx;
     const host = $('duelSweepHost');
     const full = alignSeries(list);
     const windowBars = aligned.dates.length;
@@ -1082,6 +1094,15 @@ async function renderDuelSweep(ctx, weights) {
             There is not enough history to replay this comparison from other start dates.</div>`;
         return;
     }
+
+    // The replay has to make the same cash assumption the paragraph above it
+    // states. Running the sweep without a risk-free rate handicaps the
+    // spread-out side in every window and biases the win rate toward
+    // investing all at once — by over $3,000 on a five-percent window.
+    const rfSeries = await loadSeries('RF');
+    const rfFull = rfSeries
+        ? rfOnAxis({ dates: rfSeries.dates, values: rfSeries.values }, full.dates)
+        : null;
 
     const step = Math.max(21, Math.ceil((full.dates.length - windowBars) / 200));
     let wins = 0, count = 0, marginSum = 0;
@@ -1095,6 +1116,7 @@ async function renderDuelSweep(ctx, weights) {
                 weights, total: cfg.total, deployments: cfg.deployments,
                 rebalanceDays: cfg.rebalance, costBps: cfg.costBps, feeBps: cfg.feeBps,
                 annualization: ann,
+                rfDaily: rfFull ? rfFull.slice(s, s + windowBars + 1) : null,
             });
         } catch { continue; }
         const margin = r.lump.final / r.dose.final - 1;
