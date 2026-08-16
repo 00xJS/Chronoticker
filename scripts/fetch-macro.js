@@ -111,6 +111,16 @@ const SHRINK_TOLERANCE = 0.98;
 // byte would hang the job forever rather than failing it.
 const REQUEST_TIMEOUT_MS = 60000;
 
+// ...but a ceiling with no retry turns one slow response into a failed run.
+// That is exactly what happened on 2026-08-16: FRED took longer than 60s to
+// answer for DTB3 and the whole macro refresh died, having already done the
+// expensive work of downloading and parsing a century of Fama/French rows.
+// These upstreams are free academic and government endpoints; being briefly
+// slow is normal behaviour, not an outage, and an unattended weekly job
+// should ride it out rather than page someone.
+const RETRIES = 3;
+const RETRY_BACKOFF_MS = [5000, 20000];   // waits between attempts 1→2 and 2→3
+
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
 
@@ -149,7 +159,32 @@ function round(x) {
     return Number(x.toPrecision(9));
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/**
+ * fetchBuffer with retries. Retries anything transport-shaped — a timeout, a
+ * dropped connection, a 5xx, a 429 — and gives up immediately on a 4xx, which
+ * means the URL is wrong and trying again will not fix it.
+ */
 async function fetchBuffer(url, label) {
+    let lastErr;
+    for (let attempt = 1; attempt <= RETRIES; attempt++) {
+        try {
+            return await fetchBufferOnce(url, label);
+        } catch (err) {
+            lastErr = err;
+            const status = /HTTP (\d{3})/.exec(err.message)?.[1];
+            const permanent = status && +status >= 400 && +status < 500 && +status !== 429;
+            if (permanent || attempt === RETRIES) break;
+            const wait = RETRY_BACKOFF_MS[attempt - 1] ?? RETRY_BACKOFF_MS[RETRY_BACKOFF_MS.length - 1];
+            console.log(`  ! ${label}: ${err.message} — retrying in ${wait / 1000}s (attempt ${attempt + 1}/${RETRIES})`);
+            await sleep(wait);
+        }
+    }
+    throw lastErr;
+}
+
+async function fetchBufferOnce(url, label) {
     // The body read is inside the timeout too, not just the handshake: an
     // upstream that sends headers and then stalls mid-stream hangs on
     // arrayBuffer(), and aborting the signal tears down the response

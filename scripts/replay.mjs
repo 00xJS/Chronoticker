@@ -35,6 +35,7 @@ import {
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(HERE, '..', 'data');
+const FIXTURES = path.join(HERE, '..', 'tests', 'fixtures');
 const GOLDENS = path.join(HERE, '..', 'tests', 'goldens.json');
 
 const RECORD = process.argv.includes('--record');
@@ -44,17 +45,34 @@ const TOL = 1e-9;
 
 // ── Data ────────────────────────────────────────────────────────────
 
+// Scenarios read FROZEN fixtures; properties read LIVE data.
+//
+// A golden records an exact number, so it needs input that never moves. Live
+// market data moves three ways — a new bar slides every window anchored to the
+// newest one, a dividend retroactively restates the whole adjusted history, and
+// a backfill deepens it — none of which say anything about the code. Pointing
+// the goldens at data/ made the nightly refresh block itself: the 1990 backfill
+// landed cleanly and the goldens rejected the commit.
+//
+// Properties are the opposite: they assert things that must be true of ANY
+// data, so live data is exactly what they should run against.
 const cache = new Map();
-async function load(id) {
-    if (cache.has(id)) return cache.get(id);
-    const raw = JSON.parse(await fs.readFile(path.join(DATA, `${id}.json`), 'utf8'));
+async function loadFrom(dir, id) {
+    const key = `${dir}:${id}`;
+    if (cache.has(key)) return cache.get(key);
+    const raw = JSON.parse(await fs.readFile(path.join(dir, `${id}.json`), 'utf8'));
     const s = toSeries(raw);
-    cache.set(id, s);
+    cache.set(key, s);
     return s;
 }
-async function have(id) {
-    try { await fs.access(path.join(DATA, `${id}.json`)); return true; } catch { return false; }
+async function haveIn(dir, id) {
+    try { await fs.access(path.join(dir, `${id}.json`)); return true; } catch { return false; }
 }
+
+// Swapped by the runner around each phase.
+let SOURCE = FIXTURES;
+const load = id => loadFrom(SOURCE, id);
+const have = id => haveIn(SOURCE, id);
 
 /** Build an aligned block for a set of ids, sliced to the last `days`. */
 async function block(ids, days) {
@@ -557,7 +575,8 @@ async function main() {
     const results = {};
     let failed = 0, skipped = 0, passed = 0;
 
-    console.log('── Scenarios ' + '─'.repeat(52));
+    SOURCE = FIXTURES;
+    console.log('── Scenarios ' + '─'.repeat(52) + '\n   frozen fixtures (tests/fixtures) — exact values, so the input must not move');
     for (const sc of SCENARIOS) {
         const missing = [];
         for (const n of sc.needs) if (!(await have(n))) missing.push(n);
@@ -593,7 +612,8 @@ async function main() {
         }
     }
 
-    console.log('\n── Properties ' + '─'.repeat(51));
+    SOURCE = DATA;
+    console.log('\n── Properties ' + '─'.repeat(51) + '\n   live data (data/) — invariants that must hold on whatever we actually have');
     for (const p of PROPERTIES) {
         const missing = [];
         for (const n of p.needs) if (!(await have(n))) missing.push(n);

@@ -1,5 +1,5 @@
 {
-  "recorded": "2026-08-15T23:53:03.757Z",
+  "recorded": "2026-08-16T04:46:51.442Z",
   "engine": "assets/engine.js",
   "note": "Regenerate with `node scripts/replay.mjs --record`. A value moving here is either an intended fix (say which, in the commit message) or a regression. There is no third option.",
   "scenarios": {
