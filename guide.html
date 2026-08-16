@@ -11,7 +11,10 @@
         /* Guide-only typography. Everything else comes from deck.css, which
            index.html shares — the two pages used to carry duplicate copies
            of the whole theme and drifted apart. */
-        .prose { max-width: 68ch; }
+        /* Fills the card, matching index.html. This carried a 68ch measure,
+           which left 275px of dead space down the right-hand side of a 960px
+           card and read as text pinned to the left rather than as a column. */
+        .prose { max-width: none; }
         .prose h2 {
             font-size: 1.35rem;
             margin: 42px 0 12px;
