@@ -121,6 +121,17 @@ const REQUEST_TIMEOUT_MS = 60000;
 const RETRIES = 3;
 const RETRY_BACKOFF_MS = [5000, 20000];   // waits between attempts 1→2 and 2→3
 
+// FRED gets a shorter ceiling than the French ZIP. The ZIP is 174 KB and
+// genuinely needs a moment; FRED either answers in a few seconds or is
+// refusing us, and 3 x 60s per series burned six minutes of runner time
+// discovering that twice over.
+const FRED_TIMEOUT_MS = 25000;
+
+// Once FRED has definitively refused one series, it will refuse the next
+// one too — the block is host-level, not per-series. Skip straight to the
+// fallback instead of spending another three timeouts proving it.
+let fredDown = null;
+
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ' +
            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36';
 
@@ -166,11 +177,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  * dropped connection, a 5xx, a 429 — and gives up immediately on a 4xx, which
  * means the URL is wrong and trying again will not fix it.
  */
-async function fetchBuffer(url, label) {
+async function fetchBuffer(url, label, timeoutMs = REQUEST_TIMEOUT_MS) {
     let lastErr;
     for (let attempt = 1; attempt <= RETRIES; attempt++) {
         try {
-            return await fetchBufferOnce(url, label);
+            return await fetchBufferOnce(url, label, timeoutMs);
         } catch (err) {
             lastErr = err;
             const status = /HTTP (\d{3})/.exec(err.message)?.[1];
@@ -184,7 +195,7 @@ async function fetchBuffer(url, label) {
     throw lastErr;
 }
 
-async function fetchBufferOnce(url, label) {
+async function fetchBufferOnce(url, label, timeoutMs = REQUEST_TIMEOUT_MS) {
     // The body read is inside the timeout too, not just the handshake: an
     // upstream that sends headers and then stalls mid-stream hangs on
     // arrayBuffer(), and aborting the signal tears down the response
@@ -194,7 +205,7 @@ async function fetchBufferOnce(url, label) {
         const res = await fetch(url, {
             headers:  HEADERS,
             redirect: 'follow',
-            signal:   AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            signal:   AbortSignal.timeout(timeoutMs),
         });
         if (!res.ok) throw new Error(`${label}: HTTP ${res.status} ${res.statusText}`);
         buf = Buffer.from(await res.arrayBuffer());
@@ -205,7 +216,7 @@ async function fetchBufferOnce(url, label) {
         // otherwise a timeout reads as a bare "This operation was aborted"
         // on exactly the platform the scheduled job runs on.
         if (err.name === 'TimeoutError' || err.cause?.name === 'TimeoutError') {
-            throw new Error(`${label}: timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+            throw new Error(`${label}: timed out after ${timeoutMs / 1000}s`);
         }
         throw err;
     }
@@ -213,8 +224,8 @@ async function fetchBufferOnce(url, label) {
     return buf;
 }
 
-async function fetchText(url, label) {
-    return (await fetchBuffer(url, label)).toString('utf8');
+async function fetchText(url, label, timeoutMs = REQUEST_TIMEOUT_MS) {
+    return (await fetchBuffer(url, label, timeoutMs)).toString('utf8');
 }
 
 // ── ZIP container, parsed by hand ────────────────────────────────────
@@ -334,8 +345,18 @@ async function fetchFrench() {
 // ── Source 2: FRED keyless CSV ───────────────────────────────────────
 
 async function fetchFred(id) {
+    if (fredDown) throw new Error(`fred:${id}: skipped — FRED already unreachable this run (${fredDown})`);
     process.stdout.write(`Fetching FRED ${id}... `);
-    const text  = await fetchText(FRED_URL(id), `fred:${id}`);
+    let text;
+    try {
+        text = await fetchText(FRED_URL(id), `fred:${id}`, FRED_TIMEOUT_MS);
+    } catch (err) {
+        // Transport failure means the host is refusing us, not that this
+        // particular series is broken. Trip the breaker so the next one
+        // fails instantly instead of spending another three timeouts.
+        if (/timed out|fetch failed|ECONN|socket/i.test(err.message)) fredDown = err.message;
+        throw err;
+    }
     const lines = text.split(/\r?\n/).filter(Boolean);
     if (!lines.length) throw new Error(`fred:${id}: empty CSV`);
 
@@ -795,7 +816,21 @@ async function main() {
         console.log(`  ! Continuing without the recent-rate tail — RF will end at Ken French's ` +
                     `last publication. This is recorded in the file's note.`);
     }
-    const cpiRaw = await fetchFred('CPIAUCNS');
+    // Same treatment as DTB3, for the same reason — and it turned out to be
+    // needed: on 2026-08-16 CPIAUCNS timed out too, which proved the block is
+    // host-level rather than anything to do with DTB3. The CPI moves once a
+    // month and we already have it on disk, so an unreachable FRED must not
+    // cost us the century of market history we just finished parsing.
+    let cpiRaw = null;
+    let cpiFailed = null;
+    try {
+        cpiRaw = await fetchFred('CPIAUCNS');
+    } catch (err) {
+        cpiFailed = err.message;
+        console.log(`  ! CPI unavailable (${err.message})`);
+        console.log(`  ! Keeping the CPI file already on disk — it is refreshed monthly, so a ` +
+                    `skipped run costs nothing as long as the next one lands.`);
+    }
 
     console.log('\nBuilding series...');
     const usmkt = buildUSMKT(catalog, french);
@@ -815,14 +850,17 @@ async function main() {
         }
     }
     const rf    = buildRF(catalog, french, dtb3.rows, dtb3Failed, preservedTail);
-    const cpi   = buildCPI(catalog, cpiRaw.rows);
+    const cpi   = cpiFailed ? null : buildCPI(catalog, cpiRaw.rows);
 
     // Every assertion has now passed for all three files. Those assertions
     // only prove each file is internally coherent, though — a stalled
     // upstream serving last year's rows produces a perfectly coherent file
     // that happens to be a year out of date. Only a comparison against
     // what is already on disk can catch that.
-    const built = [usmkt.obj, rf.obj, cpi.obj];
+    // USMKT and RF are cut from the same Ken French rows in one pass, so they
+    // are written together or not at all. CPI comes from a different upstream
+    // and is independent — skipping it leaves the existing file untouched.
+    const built = cpi ? [usmkt.obj, rf.obj, cpi.obj] : [usmkt.obj, rf.obj];
 
     const regressions = [];
     for (const obj of built) {
@@ -851,8 +889,6 @@ async function main() {
 
     const uc = usmkt.obj.closes;
     const rc = extent(rf.obj.closes);
-    const cc = extent(cpi.obj.closes);
-    const cl = cpi.obj.closes;
     console.log('\nVerified numbers:');
     console.log(`  USMKT  index ${uc[0]} → ${uc[uc.length - 1].toFixed(2)} over ${usmkt.obj.count} sessions`);
     console.log(`  USMKT  1929 drawdown ${(usmkt.dd.drawdown * 100).toFixed(2)}% ` +
@@ -860,8 +896,25 @@ async function main() {
     console.log(`  USMKT  long-run CAGR ${(usmkt.cagr * 100).toFixed(2)}%/yr`);
     console.log(`  RF     daily decimal ${rc.lo} → ${rc.hi} ` +
                 `(≈${(rc.lo * TRADING_DAYS * 100).toFixed(2)}%–${(rc.hi * TRADING_DAYS * 100).toFixed(2)}% annualized), ` +
-                `${rf.tail} days spliced from DTB3 after ${isoDate(rf.spliceAfter)}`);
-    console.log(`  CPI    level ${cc.lo} → ${cc.hi}, latest ${cl[cl.length - 1]} at ${cpi.obj.lastDate}`);
+                (dtb3Failed
+                    ? `${rf.tail} tail day(s) kept from the previous build (DTB3 unreachable)`
+                    : `${rf.tail} days spliced from DTB3 after ${isoDate(rf.spliceAfter)}`));
+    if (cpi) {
+        const cc = extent(cpi.obj.closes);
+        const cl = cpi.obj.closes;
+        console.log(`  CPI    level ${cc.lo} → ${cc.hi}, latest ${cl[cl.length - 1]} at ${cpi.obj.lastDate}`);
+    } else {
+        console.log(`  CPI    not refreshed this run (${cpiFailed}); existing file left in place`);
+    }
+
+    // A run that could not reach FRED at all still succeeded at its main job,
+    // but say so plainly rather than letting a green tick imply everything
+    // landed. If this becomes the norm, the CPI will age out of the data
+    // gate's 75-day budget and that failure is the one worth acting on.
+    if (dtb3Failed || cpiFailed) {
+        console.log(`\n! FRED was unreachable from this machine. USMKT and RF are current; ` +
+                    `anything sourced from FRED was preserved rather than refreshed.`);
+    }
 }
 
 main().catch(err => {
