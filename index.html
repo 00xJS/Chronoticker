@@ -376,11 +376,19 @@ function updateTotal() {
     $('allocTotal').className = 'alloc-total ' + (Math.abs(total - 100) < 0.5 ? 'ok' : 'bad');
 }
 
+/**
+ * Returns the ids that had to be dropped for want of data, so the caller can
+ * say so. A preset that quietly loads two of its three holdings is worse than
+ * one that refuses: the weights no longer total 100 and the reason is
+ * invisible. This matters while the catalogue is ahead of the backfill.
+ */
 function setAllocations(pairs) {
     allocsEl.innerHTML = '';
     const usable = pairs.filter(([sym]) => AVAILABLE.some(i => i.id === sym));
-    if (!usable.length) { makeRow(AVAILABLE[0]?.id || 'SPY', 100); return; }
+    const dropped = pairs.filter(([sym]) => !AVAILABLE.some(i => i.id === sym)).map(([sym]) => sym);
+    if (!usable.length) { makeRow(AVAILABLE[0]?.id || 'SPY', 100); return dropped; }
     usable.forEach(([sym, w]) => makeRow(sym, w));
+    return dropped;
 }
 
 // ── URL state ───────────────────────────────────────────────────────
@@ -1319,7 +1327,13 @@ $('equalWeights').addEventListener('click', () => {
 $('allocPresets').addEventListener('click', e => {
     const key = e.target?.dataset?.preset;
     if (!key) return;
-    setAllocations(ALLOC_PRESETS[key]);
+    const dropped = setAllocations(ALLOC_PRESETS[key]);
+    if (dropped.length) {
+        setStatus('warn', `${e.target.textContent} needs ${dropped.join(', ')}, which has not been fetched yet — ` +
+            `loaded the rest, so the weights no longer total 100%. Run the "Refresh stock data" action to backfill.`);
+    } else {
+        setStatus('', 'Ready.');
+    }
 });
 
 $('regimePresets').addEventListener('click', e => {
