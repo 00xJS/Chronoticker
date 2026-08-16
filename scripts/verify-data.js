@@ -94,7 +94,11 @@ const STALE_DAYS = 7;
 // 75 leaves headroom while still catching a genuine stall.
 const STALE_EXEMPT = {
     USMKT: { days: 75, why: 'Ken French publishes the market factor monthly, four to six weeks in arrears' },
-    RF:    { days: 45, why: 'Ken French monthly cadence, but spliced with FRED DTB3 which is daily' },
+    // 45 assumed the daily DTB3 tail always lands. It does not: FRED's CSV
+    // endpoint times out from GitHub runners, so the tail is best-effort and
+    // RF then ends at Ken French's monthly date like USMKT does. Budgeting for
+    // the tail meant a failed tail became a failed data gate a fortnight later.
+    RF:    { days: 75, why: 'Ken French monthly cadence; the daily FRED DTB3 tail is best-effort' },
     CPI:   { days: 75, why: 'FRED publishes CPIAUCNS monthly, a few weeks in arrears' },
 };
 

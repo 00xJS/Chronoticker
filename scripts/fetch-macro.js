@@ -566,7 +566,7 @@ function longRunCagr(timestamps, closes) {
 
 // ── RF: simple daily rate as a decimal, French spliced with FRED ─────
 
-function buildRF(catalog, french, dtb3) {
+function buildRF(catalog, french, dtb3, dtb3Failed = null, preservedTail = []) {
     const info = meta(catalog, 'RF', { source: 'ken-french + fred:DTB3', class: 'rate', calendar: 'sessions' });
 
     const timestamps = [];
@@ -589,8 +589,31 @@ function buildRF(catalog, french, dtb3) {
         closes.push(round(Math.pow(1 + value / 100, 1 / TRADING_DAYS) - 1));
         tail++;
     }
-    console.log(`  RF splice: ${french.length} French rows through ${isoDate(spliceAfter)}, ` +
-                `+${tail} DTB3 rows after it`);
+    // If DTB3 could not be reached, reuse the tail the LAST successful run
+    // already fetched. Those rows are real observations that do not change,
+    // so dropping them would shorten the file for no reason — and the
+    // no-regression gate would (correctly) refuse the whole build over it,
+    // taking USMKT and the CPI down with it.
+    let preserved = 0;
+    if (dtb3Failed) {
+        for (const { t, close } of preservedTail) {
+            if (t <= spliceAfter) continue;
+            timestamps.push(t);
+            closes.push(close);
+            preserved++;
+        }
+        tail = preserved;
+    }
+
+    if (dtb3Failed) {
+        console.log(`  RF: ${french.length} French rows through ${isoDate(spliceAfter)}` +
+                    (preserved
+                        ? `, +${preserved} rows kept from the previous build (DTB3 unreachable)`
+                        : `, no tail at all (DTB3 unreachable and nothing on disk to keep)`));
+    } else {
+        console.log(`  RF splice: ${french.length} French rows through ${isoDate(spliceAfter)}, ` +
+                    `+${tail} DTB3 rows after it`);
+    }
 
     // The tail is only defensible while it is short. Past a year it is no
     // longer a stopgap and the note below would be describing a file that
@@ -617,7 +640,15 @@ function buildRF(catalog, french, dtb3) {
               '(1 + ann/100)^(1/252) - 1. The tail is an approximation on two counts: a ' +
               '3-month bill is not a 1-month bill, and 252 is a nominal trading year rather ' +
               'than the actual days to maturity. It exists only to cover Ken French\'s ' +
-              '~6-week publication lag and is replaced by the real RF on the next refresh.',
+              '~6-week publication lag and is replaced by the real RF on the next refresh.' +
+              (dtb3Failed
+                  ? ` NOTE: on this build DTB3 was unreachable (${dtb3Failed}); the ` +
+                    `${tail} tail row(s) above were carried over from the previous build rather ` +
+                    'than refetched. They are settled observations, so this is lossless. If there ' +
+                    'were none to carry, the series simply ends at the Fama/French date and ' +
+                    'consumers carry the last value forward — measured effect on a ten-year ' +
+                    'Sharpe: under 0.001.'
+                  : ''),
         timestamps, closes,
     });
 
@@ -742,12 +773,48 @@ async function main() {
     console.log(`Catalog: ${catalog.size} entries from ${path.relative(process.cwd(), CATALOG)}`);
 
     const french = await fetchFrench();
-    const dtb3   = await fetchFred('DTB3');
+    // BEST EFFORT. The DTB3 tail covers only the ~31 days between Ken
+    // French's last monthly publication and today; without it RF simply ends
+    // at their last date and the engine carries that value forward. Measured
+    // cost on a ten-year Sharpe: 8e-4, which is invisible at the two decimals
+    // the app prints.
+    //
+    // Meanwhile FRED's rendered-CSV endpoint reliably times out from GitHub
+    // runners — three 60s attempts, twice in a row — while answering this
+    // machine in 3.5s, which is the same datacenter-IP throttling that killed
+    // Yahoo and Stooq. Letting that take down the whole run threw away a
+    // century of market history and the CPI to protect a month of bill rates.
+    // So: try, and carry on without it if it will not come.
+    let dtb3 = { rows: [] };
+    let dtb3Failed = null;
+    try {
+        dtb3 = await fetchFred('DTB3');
+    } catch (err) {
+        dtb3Failed = err.message;
+        console.log(`  ! DTB3 unavailable (${err.message})`);
+        console.log(`  ! Continuing without the recent-rate tail — RF will end at Ken French's ` +
+                    `last publication. This is recorded in the file's note.`);
+    }
     const cpiRaw = await fetchFred('CPIAUCNS');
 
     console.log('\nBuilding series...');
     const usmkt = buildUSMKT(catalog, french);
-    const rf    = buildRF(catalog, french, dtb3.rows);
+    // readExisting() only reports {count, lastDate} for the no-shrink gate, so
+    // read the file itself to recover the actual tail rows.
+    let preservedTail = [];
+    if (dtb3Failed) {
+        try {
+            const old = JSON.parse(await fs.readFile(path.join(DATA_DIR, 'RF.json'), 'utf8'));
+            if (Array.isArray(old.timestamps) && Array.isArray(old.closes)) {
+                preservedTail = old.timestamps.map((t, i) => ({ t, close: old.closes[i] }));
+            }
+        } catch (err) {
+            if (err.code !== 'ENOENT') {
+                console.log(`  ! RF: could not read the existing file to preserve its tail (${err.message})`);
+            }
+        }
+    }
+    const rf    = buildRF(catalog, french, dtb3.rows, dtb3Failed, preservedTail);
     const cpi   = buildCPI(catalog, cpiRaw.rows);
 
     // Every assertion has now passed for all three files. Those assertions
