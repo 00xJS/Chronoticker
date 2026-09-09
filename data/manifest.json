@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-08T06:58:38.643Z",
+  "generated": "2026-09-09T07:07:53.702Z",
   "note": "Written by scripts/verify-data.js. Lists the instruments that have a data file, so the app does not have to probe for them. Safe to delete — the app falls back to probing.",
   "present": [
     "AAPL",
