@@ -10,1385 +10,307 @@
     <meta property="og:title" content="Chronoticker — Portfolio Backtester">
     <meta property="og:description" content="How would your allocation have performed? With honest metrics, a century of history, and a base rate instead of an anecdote.">
     <link rel="stylesheet" href="assets/deck.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Pinned: an unpinned "latest" silently moves a load-bearing dependency
+         under a site that has no build step and no lockfile to catch it. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.js"></script>
 </head>
 <body>
-<div class="container">
-    <a class="kicker" href="https://observation-deck.netlify.app/">Observation Deck / Chronoticker</a>
 
-    <div class="top-bar">
+<header class="app-head">
+    <a class="kicker" href="https://observation-deck.netlify.app/">Observation Deck / Chronoticker</a>
+    <div class="head-row">
         <h1>Chronoticker</h1>
-        <div class="spacer"></div>
+        <div class="modes" role="tablist" aria-label="What to measure">
+            <button type="button" role="tab" id="modeBacktest" aria-selected="true" aria-controls="backtestResults">Backtest</button>
+            <button type="button" role="tab" id="modeDuel" aria-selected="false" aria-controls="duelResults">All at once vs. spread out</button>
+        </div>
         <a class="help-link" href="guide.html">Guide</a>
     </div>
+</header>
 
-    <div class="modes" role="tablist" aria-label="What to measure">
-        <button type="button" role="tab" id="modeBacktest" aria-selected="true">Backtest</button>
-        <button type="button" role="tab" id="modeDuel" aria-selected="false">All at once vs. spread out</button>
-    </div>
-
-    <p class="first-time" id="firstTime">
-        <strong>New here?</strong> Pick some holdings, set the weights to 100%, and press Run.
-        Everything is simulated on real daily closing prices — nothing is a projection.
-        The <a href="guide.html">guide</a> explains what each number means and, more importantly,
-        what it does not.
+<!-- ── Front door ─────────────────────────────────────────────────────
+     Shown until the first run. The presets are the most compelling thing
+     in the tool and used to be 10px pills below the fold. -->
+<section class="launchpad" id="launchpad">
+    <p class="launch-lede">
+        Describe an allocation and it is replayed against real daily closing prices —
+        nothing here is a projection. Start from one of these, or build your own below.
     </p>
-
-    <!-- ── Allocation ────────────────────────────────────────────── -->
-    <div class="section-label">Holdings</div>
-    <div class="allocations" id="allocs"></div>
-    <div class="alloc-controls">
-        <button type="button" id="addAsset">+ Add holding</button>
-        <button type="button" id="equalWeights">Equal weights</button>
-        <span class="alloc-total" id="allocTotal">Total: 0%</span>
+    <div class="preset-grid" id="presetGrid">
+        <button type="button" class="preset-card" data-preset="century">
+            <span class="pc-name">A century of the market</span>
+            <span class="pc-desc">Every US stock, daily, back to 1926. The Depression and 1973 are inside the tool.</span>
+            <span class="pc-meta">1 holding · since 1926</span>
+        </button>
+        <button type="button" class="preset-card" data-preset="index">
+            <span class="pc-name">Just the index</span>
+            <span class="pc-desc">The S&amp;P 500 and nothing else. The thing everything else is measured against.</span>
+            <span class="pc-meta">1 holding · since 1993</span>
+        </button>
+        <button type="button" class="preset-card" data-preset="mag7">
+            <span class="pc-name">Magnificent 7</span>
+            <span class="pc-desc">The famous megacaps. The tool will tell you how rigged this menu is.</span>
+            <span class="pc-meta">7 holdings · selection bias</span>
+        </button>
+        <button type="button" class="preset-card" data-preset="6040">
+            <span class="pc-name">Classic 60/40</span>
+            <span class="pc-desc">Sixty stocks, forty bonds. The default advice for thirty years.</span>
+            <span class="pc-meta">2 holdings · balanced</span>
+        </button>
+        <button type="button" class="preset-card" data-preset="allweather">
+            <span class="pc-name">All-weather</span>
+            <span class="pc-desc">Long bonds, gold and commodities alongside stocks, built to survive regimes.</span>
+            <span class="pc-meta">5 holdings · defensive</span>
+        </button>
+        <button type="button" class="preset-card" data-preset="global">
+            <span class="pc-name">Global 3-fund</span>
+            <span class="pc-desc">US, developed international, bonds. The whole world in three tickers.</span>
+            <span class="pc-meta">3 holdings · diversified</span>
+        </button>
     </div>
-    <div class="presets" id="allocPresets">
-        <span class="presets-label">Try</span>
-        <button type="button" data-preset="mag7">Magnificent 7</button>
-        <button type="button" data-preset="6040">Classic 60/40</button>
-        <button type="button" data-preset="allweather">All-weather</button>
-        <button type="button" data-preset="global">Global 3-fund</button>
-        <button type="button" data-preset="index">Just the index</button>
-        <button type="button" data-preset="century">A century of the market</button>
-    </div>
+</section>
 
-    <!-- ── Setup ─────────────────────────────────────────────────── -->
-    <div class="section-label">Setup</div>
-    <div class="controls">
-        <div class="field" id="fieldInitial">
-            <label for="initial">Starting amount</label>
-            <input type="number" id="initial" value="10000" min="0" step="100">
-            <span class="field-hint">Can be 0 if you are only contributing.</span>
-        </div>
-        <div class="field" id="fieldContribution">
-            <label for="contribution">Regular contribution</label>
-            <input type="number" id="contribution" value="0" min="0" step="50">
-            <span class="field-hint">Leave at 0 for a lump sum.</span>
-        </div>
-        <div class="field" id="fieldCadence">
-            <label for="cadence">Contribution every</label>
-            <select id="cadence">
-                <option value="7">Week</option>
-                <option value="14">Two weeks</option>
-                <option value="30" selected>Month</option>
-                <option value="91">Quarter</option>
-            </select>
-        </div>
-        <div class="field" id="fieldTotal" hidden>
-            <label for="duelTotal">Total to invest</label>
-            <input type="number" id="duelTotal" value="120000" min="1" step="1000">
-        </div>
-        <div class="field" id="fieldDeployments" hidden>
-            <label for="deployments">Spread over</label>
-            <select id="deployments">
-                <option value="6">6 instalments</option>
-                <option value="12" selected>12 instalments</option>
-                <option value="24">24 instalments</option>
-                <option value="36">36 instalments</option>
-            </select>
-        </div>
-        <div class="field">
-            <label for="lookback">Time range</label>
-            <select id="lookback">
-                <option value="6mo">6 months</option>
-                <option value="1y" selected>1 year</option>
-                <option value="2y">2 years</option>
-                <option value="5y">5 years</option>
-                <option value="10y">10 years</option>
-                <option value="20y">20 years</option>
-                <option value="30y">30 years</option>
-                <option value="max">Everything available</option>
-                <option value="custom">Custom dates…</option>
-            </select>
-        </div>
-        <div class="field" id="fieldFrom" hidden>
-            <label for="fromDate">From</label>
-            <input type="date" id="fromDate">
-        </div>
-        <div class="field" id="fieldTo" hidden>
-            <label for="toDate">To</label>
-            <input type="date" id="toDate">
-        </div>
-        <div class="field">
-            <label for="rebalance">Rebalance</label>
-            <select id="rebalance">
-                <option value="0" selected>Never (buy &amp; hold)</option>
-                <option value="30">Monthly</option>
-                <option value="91">Quarterly</option>
-                <option value="365">Annually</option>
-            </select>
-        </div>
-        <div class="field">
-            <label for="costBps">Trading cost</label>
-            <select id="costBps">
-                <option value="0" selected>None (frictionless)</option>
-                <option value="5">5 bps — big liquid ETFs</option>
-                <option value="10">10 bps — typical retail</option>
-                <option value="25">25 bps — wide spreads</option>
-            </select>
-        </div>
-        <div class="field">
-            <label for="feeBps">Annual fee</label>
-            <select id="feeBps">
-                <option value="0" selected>None</option>
-                <option value="3">0.03% — index fund</option>
-                <option value="20">0.20% — typical ETF</option>
-                <option value="50">0.50% — active fund</option>
-                <option value="100">1.00% — adviser</option>
-            </select>
-        </div>
-        <div class="field">
-            <label for="measure">Measure in</label>
-            <select id="measure">
-                <option value="nominal" selected>Nominal dollars</option>
-                <option value="real">Today's dollars (inflation-adjusted)</option>
-            </select>
-        </div>
-    </div>
+<!-- ── Workbench ──────────────────────────────────────────────────── -->
+<div class="workbench">
 
-    <div class="presets" id="regimePresets">
-        <span class="presets-label">Jump to</span>
-        <button type="button" data-regime="dotcom">Dot-com bust</button>
-        <button type="button" data-regime="gfc">2008 crisis</button>
-        <button type="button" data-regime="lostdecade">The lost decade</button>
-        <button type="button" data-regime="covid">COVID crash</button>
-        <button type="button" data-regime="bear2022">2022 bear</button>
-        <button type="button" data-regime="stagflation">1973–74 stagflation</button>
-        <button type="button" data-regime="depression">1929–32 Depression</button>
-    </div>
+    <!-- Control rail -->
+    <aside class="rail" aria-label="Controls">
+        <div class="rail-scroll">
 
-    <div class="run-row">
-        <button id="run" class="btn">Run</button>
-    </div>
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>Holdings</h2>
+                    <span class="alloc-total" id="allocTotal">0%</span>
+                </div>
+                <div class="weight-bar" id="weightBar"></div>
+                <p class="weight-hint" id="weightHint"></p>
+                <div class="allocations" id="allocs"></div>
+                <div class="alloc-controls">
+                    <button type="button" id="addAsset">+ Add holding</button>
+                    <button type="button" id="equalWeights">Even out</button>
+                </div>
+                <div class="presets tight" id="allocPresets">
+                    <span class="presets-label">Load</span>
+                    <button type="button" data-preset="mag7">Mag 7</button>
+                    <button type="button" data-preset="6040">60/40</button>
+                    <button type="button" data-preset="allweather">All-weather</button>
+                    <button type="button" data-preset="global">Global 3</button>
+                    <button type="button" data-preset="index">Index</button>
+                    <button type="button" data-preset="century">Century</button>
+                </div>
+            </section>
 
-    <div class="data-status" id="status">Ready.</div>
+            <section class="panel">
+                <div class="panel-head"><h2>Money</h2></div>
+                <div class="fields">
+                    <div class="field" id="fieldInitial">
+                        <label for="initial">Starting amount</label>
+                        <div class="input-money"><span>$</span><input type="number" id="initial" value="10000" min="0" step="100"></div>
+                        <span class="field-hint">Can be 0 if you are only contributing.</span>
+                    </div>
+                    <div class="field" id="fieldContribution">
+                        <label for="contribution">Regular contribution</label>
+                        <div class="input-money"><span>$</span><input type="number" id="contribution" value="0" min="0" step="50"></div>
+                        <span class="field-hint">Leave at 0 for a lump sum.</span>
+                    </div>
+                    <div class="field" id="fieldCadence">
+                        <label for="cadence">Contribution every</label>
+                        <select id="cadence">
+                            <option value="7">Week</option>
+                            <option value="14">Two weeks</option>
+                            <option value="30" selected>Month</option>
+                            <option value="91">Quarter</option>
+                        </select>
+                    </div>
+                    <div class="field" id="fieldTotal" hidden>
+                        <label for="duelTotal">Total to invest</label>
+                        <div class="input-money"><span>$</span><input type="number" id="duelTotal" value="120000" min="1" step="1000"></div>
+                    </div>
+                    <div class="field" id="fieldDeployments" hidden>
+                        <label for="deployments">Spread over</label>
+                        <select id="deployments">
+                            <option value="6">6 instalments</option>
+                            <option value="12" selected>12 instalments</option>
+                            <option value="24">24 instalments</option>
+                            <option value="36">36 instalments</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
 
-    <!-- ── Results ───────────────────────────────────────────────── -->
-    <div class="results" id="results" hidden>
-        <div class="coverage" id="coverage"></div>
-        <div class="assumptions" id="assumptions"></div>
+            <section class="panel">
+                <div class="panel-head"><h2>Window</h2></div>
+                <div class="fields">
+                    <div class="field">
+                        <label for="lookback">Time range</label>
+                        <select id="lookback">
+                            <option value="6mo">6 months</option>
+                            <option value="1y" selected>1 year</option>
+                            <option value="2y">2 years</option>
+                            <option value="5y">5 years</option>
+                            <option value="10y">10 years</option>
+                            <option value="20y">20 years</option>
+                            <option value="30y">30 years</option>
+                            <option value="max">Everything available</option>
+                            <option value="custom">Custom dates…</option>
+                        </select>
+                    </div>
+                    <div class="field" id="fieldFrom" hidden>
+                        <label for="fromDate">From</label>
+                        <input type="date" id="fromDate">
+                    </div>
+                    <div class="field" id="fieldTo" hidden>
+                        <label for="toDate">To</label>
+                        <input type="date" id="toDate">
+                    </div>
+                </div>
+                <div class="presets tight" id="regimePresets">
+                    <span class="presets-label">Jump to</span>
+                    <button type="button" data-regime="dotcom">Dot-com bust</button>
+                    <button type="button" data-regime="gfc">2008 crisis</button>
+                    <button type="button" data-regime="lostdecade">Lost decade</button>
+                    <button type="button" data-regime="covid">COVID crash</button>
+                    <button type="button" data-regime="bear2022">2022 bear</button>
+                    <button type="button" data-regime="stagflation">1973–74</button>
+                    <button type="button" data-regime="depression">1929–32</button>
+                </div>
+            </section>
 
-        <div id="backtestResults">
-            <div class="section-label">Your money</div>
-            <div class="stat-group" id="statsMoney"></div>
-
-            <div class="section-label">The strategy</div>
-            <div class="stat-group" id="statsStrategy"></div>
-
-            <div class="section-label">Growth</div>
-            <div class="chart-wrap"><canvas id="chart" height="150"></canvas></div>
-
-            <div class="section-label">Was this window lucky?</div>
-            <div id="sweepHost"></div>
-
-            <div id="noticeHost"></div>
-
-            <div class="section-label">Per holding</div>
-            <div class="breakdown-wrap" id="breakdownHost"></div>
-
-            <div id="ledgerHost"></div>
-        </div>
-
-        <div id="duelResults" hidden>
-            <div class="section-label">Verdict</div>
-            <div class="stat-group" id="duelStats"></div>
-            <div class="story" id="duelStory"></div>
-
-            <div class="section-label">Both lenses</div>
-            <div style="overflow-x:auto"><table class="duel-table" id="duelTable"></table></div>
-
-            <div class="section-label">Wealth over time</div>
-            <div class="chart-wrap"><canvas id="duelChart" height="150"></canvas></div>
-
-            <div class="section-label">How often does spreading out win?</div>
-            <div id="duelSweepHost"></div>
+            <section class="panel">
+                <div class="panel-head"><h2>Frictions &amp; lens</h2></div>
+                <div class="fields">
+                    <div class="field">
+                        <label for="rebalance">Rebalance</label>
+                        <select id="rebalance">
+                            <option value="0" selected>Never (buy &amp; hold)</option>
+                            <option value="30">Monthly</option>
+                            <option value="91">Quarterly</option>
+                            <option value="365">Annually</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="costBps">Trading cost</label>
+                        <select id="costBps">
+                            <option value="0" selected>None (frictionless)</option>
+                            <option value="5">5 bps — big liquid ETFs</option>
+                            <option value="10">10 bps — typical retail</option>
+                            <option value="25">25 bps — wide spreads</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="feeBps">Annual fee</label>
+                        <select id="feeBps">
+                            <option value="0" selected>None</option>
+                            <option value="3">0.03% — index fund</option>
+                            <option value="20">0.20% — typical ETF</option>
+                            <option value="50">0.50% — active fund</option>
+                            <option value="100">1.00% — adviser</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="measure">Measure in</label>
+                        <select id="measure">
+                            <option value="nominal" selected>Nominal dollars</option>
+                            <option value="real">Today's dollars (inflation-adjusted)</option>
+                        </select>
+                    </div>
+                </div>
+            </section>
         </div>
 
-        <div class="share-row">
-            <button type="button" id="copyLink">Copy link to this run</button>
-            <button type="button" id="exportCsv">Download the numbers (CSV)</button>
+        <div class="rail-foot">
+            <button id="run" class="btn-primary" type="button">
+                <span class="btn-label">Run</span>
+                <span class="btn-spinner" aria-hidden="true"></span>
+            </button>
+            <label class="autorun" for="autoRun" title="Re-run automatically when you change a control">
+                <input type="checkbox" id="autoRun" checked>
+                <span>Live</span>
+            </label>
         </div>
-    </div>
+    </aside>
 
-    <div class="footer">
-        <a href="https://observation-deck.netlify.app/">Observation Deck</a> &middot;
-        <a href="https://github.com/00xJS/Chronoticker">GitHub</a> &middot;
-        <a href="guide.html">Guide</a>
-        <div class="disclaimer">
-            Educational tool. Backtests describe the past and do not predict the future.
-            Nothing here is financial advice.
+    <!-- Results pane -->
+    <main class="stage">
+        <div class="data-status" id="status" role="status">Ready.</div>
+
+        <div class="results" id="results" hidden>
+
+            <div id="backtestResults" role="tabpanel" aria-labelledby="modeBacktest" tabindex="0">
+                <div class="hero" id="hero"></div>
+                <div class="coverage" id="coverage"></div>
+                <div class="assumptions" id="assumptions"></div>
+
+                <h2 class="section-label">
+                    Growth
+                    <span class="chart-tools">
+                        <button type="button" id="chartScale" aria-pressed="false" title="Switch between linear and logarithmic value axis">Log</button>
+                        <button type="button" id="chartDD" aria-pressed="true" title="Shade the deepest peak-to-trough fall">Drawdown</button>
+                        <button type="button" id="chartReset" hidden>Reset zoom</button>
+                    </span>
+                </h2>
+                <div class="chart-card">
+                    <div class="chart-legend" id="chartLegend"></div>
+                    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+                    <p class="chart-hint">Drag across the chart to zoom into a window · click a series to hide it</p>
+                </div>
+
+                <h2 class="section-label">The strategy</h2>
+                <div class="stat-group" id="statsStrategy"></div>
+
+                <h2 class="section-label">Was this window lucky?</h2>
+                <div id="sweepHost"></div>
+
+                <div id="noticeHost"></div>
+
+                <h2 class="section-label">Per holding</h2>
+                <div class="breakdown-wrap" id="breakdownHost"></div>
+
+                <div id="ledgerHost"></div>
+            </div>
+
+            <div id="duelResults" role="tabpanel" aria-labelledby="modeDuel" tabindex="0" hidden>
+                <h2 class="section-label">Verdict</h2>
+                <div class="stat-group" id="duelStats"></div>
+                <div class="story" id="duelStory"></div>
+
+                <h2 class="section-label">Both lenses</h2>
+                <div class="breakdown-wrap"><table class="duel-table" id="duelTable"></table></div>
+
+                <h2 class="section-label">Wealth over time</h2>
+                <div class="chart-card">
+                    <div class="chart-legend" id="duelChartLegend"></div>
+                    <div class="chart-wrap"><canvas id="duelChart"></canvas></div>
+                </div>
+
+                <h2 class="section-label">How often does spreading out win?</h2>
+                <div id="duelSweepHost"></div>
+            </div>
+
+            <div class="share-row">
+                <button type="button" id="copyLink">Copy link to this run</button>
+                <button type="button" id="exportCsv">Download the numbers (CSV)</button>
+            </div>
         </div>
-    </div>
+
+        <div class="stage-empty" id="stageEmpty">
+            <div class="stage-empty-mark" aria-hidden="true">⏱</div>
+            <p>Pick an allocation and press <b>Run</b>.<br>
+            The <a href="guide.html">guide</a> explains what each number means — and what it does not.</p>
+        </div>
+    </main>
 </div>
 
-<script type="module">
-import {
-    toSeries, alignSeries, sliceAligned, projectOnAxis, simulate, metrics, xirr,
-    baseRateSweep, duel, rfOnAxis, cpiOnAxis, deflate, deflateFlows, realRfOnAxis, annualizationFor,
-    groupBias, iso, parseISO,
-} from './assets/engine.js';
-
-// ── State ───────────────────────────────────────────────────────────
-
-let CATALOG = null;
-const SERIES = new Map();      // id → series | null (null = confirmed absent)
-let chart = null, duelChart = null;
-let lastRun = null;            // for CSV export
-let mode = 'backtest';
-let linkWarning = null;   // set by readURL, reported after the first run
-
-const $ = id => document.getElementById(id);
-const allocsEl = $('allocs');
-
-// Windows are anchored to the newest bar in the data, never to the wall
-// clock. If the nightly refresh stalls, a "5 years" window must stay five
-// years long rather than quietly shrinking as the data ages.
-const RANGE_DAYS = {
-    '6mo': 183, '1y': 366, '2y': 731, '5y': 1827,
-    '10y': 3653, '20y': 7305, '30y': 10958, 'max': null,
-};
-
-const REGIMES = {
-    dotcom:      { from: '2000-03-24', to: '2002-10-09', label: 'the dot-com bust' },
-    gfc:         { from: '2007-10-09', to: '2009-03-09', label: 'the 2008 crisis' },
-    lostdecade:  { from: '2000-01-01', to: '2009-12-31', label: 'the lost decade' },
-    covid:       { from: '2020-02-19', to: '2020-03-23', label: 'the COVID crash' },
-    bear2022:    { from: '2022-01-03', to: '2022-10-12', label: 'the 2022 bear market' },
-    stagflation: { from: '1973-01-01', to: '1974-12-31', label: 'the 1973–74 stagflation' },
-    depression:  { from: '1929-09-03', to: '1932-07-08', label: 'the Great Depression' },
-};
-
-const ALLOC_PRESETS = {
-    mag7:       [['AAPL',16],['MSFT',14],['NVDA',14],['GOOGL',14],['AMZN',14],['META',14],['TSLA',14]],
-    '6040':     [['SPY',60],['AGG',40]],
-    allweather: [['SPY',30],['TLT',40],['IEF',15],['GLD',7],['DBC',8]],
-    global:     [['VTI',50],['VEA',30],['AGG',20]],
-    index:      [['SPY',100]],
-    century:    [['USMKT',100]],
-};
-
-// ── Loading ─────────────────────────────────────────────────────────
-
-async function loadCatalog() {
-    const res = await fetch('data/catalog.json');
-    if (!res.ok) throw new Error(`catalog.json: HTTP ${res.status}`);
-    CATALOG = await res.json();
-    return CATALOG;
-}
-
-async function loadSeries(id) {
-    if (SERIES.has(id)) return SERIES.get(id);
-    let out = null;
-    try {
-        const res = await fetch(`data/${encodeURIComponent(id)}.json`);
-        if (res.ok) out = toSeries(await res.json());
-    } catch { /* treated as absent */ }
-    SERIES.set(id, out);
-    return out;
-}
-
-/**
- * Which catalog instruments actually have a data file behind them.
- *
- * data/manifest.json is written by scripts/verify-data.js on every CI run,
- * so the normal path costs one small request. Probing all 41 instruments
- * instead would mean ~30 console 404s on first paint while the catalogue
- * is still ahead of the backfill, so the manifest is worth having — but it
- * is only an optimisation, and a missing or stale one falls back to
- * probing rather than hiding an instrument that is actually there.
- */
-async function availableInstruments() {
-    try {
-        const res = await fetch('data/manifest.json');
-        if (res.ok) {
-            const m = await res.json();
-            const present = new Set(m.present || []);
-            if (present.size) return CATALOG.instruments.filter(i => present.has(i.id));
-        }
-    } catch { /* fall through to probing */ }
-    const found = await Promise.all(CATALOG.instruments.map(async i => (await loadSeries(i.id)) ? i : null));
-    return found.filter(Boolean);
-}
-
-const catalogEntry = id => CATALOG.instruments.find(i => i.id === id) || null;
-const benchmarkId = () => (CATALOG.instruments.find(i => i.benchmark) || { id: 'SPY' }).id;
-
-// ── Allocation rows ─────────────────────────────────────────────────
-
-let AVAILABLE = [];
-
-function makeRow(sym, weight) {
-    const row = document.createElement('div');
-    row.className = 'alloc-row';
-
-    const select = document.createElement('select');
-    for (const g of CATALOG.groups) {
-        const inGroup = AVAILABLE.filter(i => i.group === g.id);
-        if (!inGroup.length) continue;
-        const og = document.createElement('optgroup');
-        og.label = g.label;
-        for (const i of inGroup) {
-            const opt = document.createElement('option');
-            opt.value = i.id;
-            opt.textContent = `${i.name} (${i.id})`;
-            if (i.id === sym) opt.selected = true;
-            og.appendChild(opt);
-        }
-        select.appendChild(og);
-    }
-
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.min = 0; input.max = 100; input.step = 1;
-    input.value = weight;
-    input.setAttribute('aria-label', 'Weight in percent');
-    input.addEventListener('input', updateTotal);
-
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.textContent = '×';
-    remove.title = 'Remove';
-    remove.setAttribute('aria-label', 'Remove holding');
-    remove.addEventListener('click', () => {
-        if (allocsEl.children.length <= 1) return;
-        row.remove();
-        updateTotal();
-    });
-
-    row.append(select, input, remove);
-    allocsEl.appendChild(row);
-    updateTotal();
-}
-
-function readAllocations() {
-    const map = new Map();
-    for (const r of allocsEl.querySelectorAll('.alloc-row')) {
-        const sym = r.querySelector('select').value;
-        const w = parseFloat(r.querySelector('input').value) || 0;
-        map.set(sym, (map.get(sym) || 0) + w);
-    }
-    return [...map.entries()].filter(([, w]) => w > 0).map(([sym, weight]) => ({ sym, weight }));
-}
-
-function updateTotal() {
-    const total = readAllocations().reduce((s, a) => s + a.weight, 0);
-    $('allocTotal').textContent = `Total: ${total.toFixed(0)}%`;
-    $('allocTotal').className = 'alloc-total ' + (Math.abs(total - 100) < 0.5 ? 'ok' : 'bad');
-}
-
-/**
- * Returns the ids that had to be dropped for want of data, so the caller can
- * say so. A preset that quietly loads two of its three holdings is worse than
- * one that refuses: the weights no longer total 100 and the reason is
- * invisible. This matters while the catalogue is ahead of the backfill.
- */
-function setAllocations(pairs) {
-    allocsEl.innerHTML = '';
-    const usable = pairs.filter(([sym]) => AVAILABLE.some(i => i.id === sym));
-    const dropped = pairs.filter(([sym]) => !AVAILABLE.some(i => i.id === sym)).map(([sym]) => sym);
-    if (!usable.length) { makeRow(AVAILABLE[0]?.id || 'SPY', 100); return dropped; }
-    usable.forEach(([sym, w]) => makeRow(sym, w));
-    return dropped;
-}
-
-// ── URL state ───────────────────────────────────────────────────────
-
-// Never let a blank or malformed control reach the engine as NaN: every
-// comparison against NaN is false, so a NaN cadence produces a run that
-// quietly contributes nothing and still renders a confident result.
-const intOr = (v, dflt) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : dflt; };
-const numOr = (v, dflt) => { const n = parseFloat(v); return Number.isFinite(n) ? n : dflt; };
-
-function currentConfig() {
-    return {
-        mode,
-        alloc: readAllocations(),
-        initial: parseFloat($('initial').value) || 0,
-        contribution: parseFloat($('contribution').value) || 0,
-        cadence: intOr($('cadence').value, 30),
-        total: parseFloat($('duelTotal').value) || 0,
-        deployments: intOr($('deployments').value, 12),
-        range: $('lookback').value,
-        from: $('fromDate').value || null,
-        to: $('toDate').value || null,
-        rebalance: intOr($('rebalance').value, 0),
-        costBps: numOr($('costBps').value, 0),
-        feeBps: numOr($('feeBps').value, 0),
-        measure: $('measure').value,
-    };
-}
-
-function writeURL(cfg) {
-    const p = new URLSearchParams();
-    p.set('alloc', cfg.alloc.map(a => `${a.sym}:${a.weight}`).join(','));
-    p.set('range', cfg.range);
-    if (cfg.from) p.set('from', cfg.from);
-    if (cfg.to) p.set('to', cfg.to);
-    if (cfg.mode === 'duel') {
-        p.set('mode', 'duel');
-        p.set('total', cfg.total);
-        p.set('deploy', cfg.deployments);
-    } else {
-        if (cfg.initial) p.set('init', cfg.initial);
-        if (cfg.contribution) { p.set('contrib', cfg.contribution); p.set('cad', cfg.cadence); }
-    }
-    if (cfg.rebalance) p.set('reb', cfg.rebalance);
-    if (cfg.costBps) p.set('cost', cfg.costBps);
-    if (cfg.feeBps) p.set('fee', cfg.feeBps);
-    if (cfg.measure === 'real') p.set('real', '1');
-    history.replaceState(null, '', `${location.pathname}?${p}`);
-}
-
-function readURL() {
-    const p = new URLSearchParams(location.search);
-    if (![...p.keys()].length) return false;
-
-    if (p.get('mode') === 'duel') setMode('duel');
-    const alloc = (p.get('alloc') || '').split(',').filter(Boolean).map(s => {
-        const [sym, w] = s.split(':');
-        return [sym, parseFloat(w) || 0];
-    });
-    if (alloc.length) setAllocations(alloc);
-
-    // A <select> silently accepts an unknown value by going to selectedIndex
-    // -1, whose .value is ''. That became NaN in currentConfig and then a
-    // simulation that never contributed a dollar while still rendering a
-    // confident result. Reject anything not actually in the list and keep the
-    // default instead.
-    const rejected = [];
-    const set = (id, key, dflt) => {
-        const el = $(id);
-        const apply = v => {
-            if (el.tagName === 'SELECT') {
-                if (![...el.options].some(o => o.value === String(v))) { rejected.push(`${key}=${v}`); return; }
-            } else if (el.type === 'number' && v !== '' && !Number.isFinite(Number(v))) {
-                rejected.push(`${key}=${v}`); return;
-            }
-            el.value = v;
-        };
-        if (p.has(key)) apply(p.get(key));
-        else if (dflt != null) apply(dflt);
-    };
-    set('initial', 'init', p.has('contrib') ? 0 : null);
-    set('contribution', 'contrib');
-    set('cadence', 'cad');
-    set('duelTotal', 'total');
-    set('deployments', 'deploy');
-    set('lookback', 'range');
-    set('fromDate', 'from');
-    set('toDate', 'to');
-    set('rebalance', 'reb');
-    set('costBps', 'cost');
-    set('feeBps', 'fee');
-    $('measure').value = p.get('real') === '1' ? 'real' : 'nominal';
-    syncRangeFields();
-    // Surfaced after the run completes, because run() sets the status last
-    // and would otherwise bury it.
-    linkWarning = rejected.length
-        ? `ignored unrecognised link settings (${rejected.join(', ')}), using defaults for those`
-        : null;
-    return true;
-}
-
-// ── Mode + field visibility ─────────────────────────────────────────
-
-function setMode(next) {
-    mode = next;
-    $('modeBacktest').setAttribute('aria-selected', String(next === 'backtest'));
-    $('modeDuel').setAttribute('aria-selected', String(next === 'duel'));
-    const duelMode = next === 'duel';
-    $('fieldInitial').hidden = duelMode;
-    $('fieldContribution').hidden = duelMode;
-    $('fieldCadence').hidden = duelMode;
-    $('fieldTotal').hidden = !duelMode;
-    $('fieldDeployments').hidden = !duelMode;
-    $('backtestResults').hidden = duelMode;
-    $('duelResults').hidden = !duelMode;
-    $('results').hidden = true;
-}
-
-function syncRangeFields() {
-    const custom = $('lookback').value === 'custom';
-    $('fieldFrom').hidden = !custom;
-    $('fieldTo').hidden = !custom;
-}
-
-// ── Formatting ──────────────────────────────────────────────────────
-
-const usd = v => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-const usdc = v => v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
-const pct = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : (v * 100).toFixed(d) + '%';
-const signed = (v, d = 2) => (v == null || !isFinite(v)) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(d) + '%';
-
-function tile(label, value, sub, dir) {
-    const cls = dir === 'up' ? ' up' : dir === 'down' ? ' down' : '';
-    return `<div class="stat">
-        <div class="stat-label">${label}</div>
-        <div class="stat-value${cls}">${value}</div>
-        ${sub ? `<div class="stat-sub">${sub}</div>` : ''}
-    </div>`;
-}
-
-function setStatus(kind, msg) {
-    $('status').className = 'data-status ' + (kind || '');
-    $('status').textContent = msg;
-}
-
-// ── The run ─────────────────────────────────────────────────────────
-
-async function run() {
-    const cfg = currentConfig();
-    const runBtn = $('run');
-
-    if (!cfg.alloc.length) return setStatus('error', 'Add at least one holding.');
-    const total = cfg.alloc.reduce((s, a) => s + a.weight, 0);
-    if (Math.abs(total - 100) > 0.5) {
-        return setStatus('error', `Weights must add up to 100% — they currently add up to ${total.toFixed(0)}%.`);
-    }
-    if (mode === 'backtest' && cfg.initial <= 0 && cfg.contribution <= 0) {
-        return setStatus('error', 'Set a starting amount, a regular contribution, or both.');
-    }
-    if (mode === 'duel' && !(cfg.total > 0)) {
-        return setStatus('error', 'Set a total amount to invest.');
-    }
-
-    runBtn.disabled = true;
-    setStatus('', 'Loading prices…');
-
-    try {
-        // ── Load only the portfolio's own instruments. The benchmark is
-        // projected on afterwards so it can never truncate the window.
-        const ids = cfg.alloc.map(a => a.sym);
-        const list = await Promise.all(ids.map(loadSeries));
-        const missing = ids.filter((id, i) => !list[i]);
-        if (missing.length) {
-            throw new Error(`No price data for ${missing.join(', ')}. ` +
-                `Those symbols are in the catalogue but have not been fetched yet — ` +
-                `run the "Refresh stock data" action.`);
-        }
-
-        let aligned = alignSeries(list);
-        const dataFrom = aligned.dates[0], dataTo = aligned.dates[aligned.dates.length - 1];
-
-        // ── Window ──
-        let wantFrom = null, wantTo = null, clamped = [];
-        if (cfg.range === 'custom') {
-            wantFrom = parseISO(cfg.from);
-            wantTo = parseISO(cfg.to);
-        } else if (RANGE_DAYS[cfg.range] != null) {
-            wantFrom = dataTo - RANGE_DAYS[cfg.range] * 86400000;
-        }
-        if (wantFrom != null && wantFrom < dataFrom) { clamped.push('start'); wantFrom = dataFrom; }
-        if (wantTo != null && wantTo > dataTo) { clamped.push('end'); wantTo = dataTo; }
-        aligned = sliceAligned(aligned, wantFrom, wantTo);
-        if (aligned.dates.length < 3) throw new Error('That window contains almost no trading days — widen it.');
-
-        const ann = annualizationFor(list);
-
-        // ── Macro overlays ──
-        const rfSeries = await loadSeries('RF');
-        const cpiSeries = await loadSeries('CPI');
-        const rfNominal = rfSeries ? rfOnAxis({ dates: rfSeries.dates, values: rfSeries.values }, aligned.dates) : null;
-        const cpiAxis = cpiSeries ? cpiOnAxis({ dates: cpiSeries.dates, values: cpiSeries.values }, aligned.dates) : null;
-        const real = cfg.measure === 'real' && cpiAxis;
-
-        // "Today's dollars" has to mean TODAY, not the last day of the window.
-        // For a window ending in 1932 those differ by a factor of about 24.
-        const cpiToday = cpiSeries ? cpiSeries.values[cpiSeries.values.length - 1] : null;
-        const cpiBase = real ? cpiToday : (cpiAxis ? cpiAxis[cpiAxis.length - 1] : null);
-
-        // Measuring returns in real terms while charging a nominal cash rate
-        // subtracts inflation twice. Deflate the risk-free series too.
-        const rfDaily = (real && rfNominal) ? realRfOnAxis(rfNominal, cpiAxis) : rfNominal;
-
-        // ── Benchmark, only if it actually covers the window ──
-        // A benchmark is only meaningful if it is something OTHER than what
-        // is being measured. Comparing a holding to itself produced a
-        // "0 of 398 windows beat USMKT" verdict off a distribution of exact
-        // zeroes, which is worse than showing nothing.
-        const benchId = benchmarkId();
-        let bench = null, benchNote = null;
-        const pickBenchmark = async (id, note) => {
-            if (ids.includes(id)) return false;
-            const s = await loadSeries(id);
-            const proj = s ? projectOnAxis(s, aligned.dates) : null;
-            if (!proj) return false;
-            bench = { id, prices: proj.values, partial: proj.partial };
-            if (note) benchNote = note;
-            return true;
-        };
-
-        if (ids.length === 1 && ids[0] === benchId) {
-            benchNote = `This is the benchmark, so there is nothing to compare it against.`;
-        } else if (!(await pickBenchmark(benchId))) {
-            const reachedBack = await pickBenchmark('USMKT',
-                `${benchId} does not go back to ${iso(aligned.dates[0])}, so the comparison line is the total US market instead.`);
-            if (!reachedBack) {
-                benchNote = ids.includes('USMKT') && ids.length === 1
-                    ? `This is the broadest market index available, so there is nothing to compare it against.`
-                    : `No benchmark covers this window, so there is nothing to compare against.`;
-            }
-        }
-
-        if (mode === 'duel') {
-            await runDuel({ cfg, aligned, list, ann, rfDaily, cpiAxis, cpiBase, real, bench, clamped, dataFrom, dataTo });
-        } else {
-            await runBacktest({ cfg, aligned, list, ann, rfDaily, cpiAxis, cpiBase, real, bench, benchNote, clamped, dataFrom, dataTo, ids });
-        }
-
-        writeURL(cfg);
-        $('results').hidden = false;
-        $('firstTime').style.display = 'none';
-        reportFreshness(list, aligned);
-    } catch (err) {
-        console.error(err);
-        setStatus('error', err.message);
-    } finally {
-        runBtn.disabled = false;
-    }
-}
-
-// ── Backtest ────────────────────────────────────────────────────────
-
-async function runBacktest(ctx) {
-    const { cfg, aligned, list, ann, rfDaily, cpiAxis, cpiBase, real, bench, benchNote, clamped, ids } = ctx;
-
-    const weights = {};
-    cfg.alloc.forEach(a => weights[a.sym] = a.weight);
-
-    const opts = {
-        weights,
-        initial: cfg.initial,
-        contribution: cfg.contribution,
-        contributionDays: cfg.cadence,
-        rebalanceDays: cfg.rebalance,
-        costBps: cfg.costBps,
-        feeBps: cfg.feeBps,
-    };
-    const sim = simulate(aligned, opts);
-
-    const navForMetrics = real ? deflate(sim.nav, cpiAxis, cpiBase) : sim.nav;
-    const m = metrics(navForMetrics, aligned.dates, { annualization: ann, rfDaily });
-
-    // In real terms the final value is already in today's dollars (the CPI
-    // base is the last date), but the contributions are not — each one has
-    // to be inflated forward from the day it was actually made.
-    const flows = real ? deflateFlows(sim.flows, aligned.dates, cpiAxis, cpiBase) : sim.flows;
-    const irr = xirr(flows);
-    const contributed = real
-        ? flows.filter(f => f.amount < 0).reduce((s, f) => s - f.amount, 0)
-        : sim.totals.contributed;
-    // The final value needs restating too. The base is TODAY's price level,
-    // not the window's last day, so a window ending in 1932 is scaled by a
-    // factor of ~24 — leaving it nominal would put "you put in" in 2026
-    // dollars beside a final value in 1932 dollars.
-    const finalValue = real
-        ? sim.totals.finalValue * cpiBase / cpiAxis[cpiAxis.length - 1]
-        : sim.totals.finalValue;
-    const profit = finalValue - contributed;
-
-    // Benchmark run: identical cash-flow schedule, so only the allocation differs.
-    let bm = null, benchSim = null;
-    if (bench) {
-        const benchAligned = { dates: aligned.dates, prices: { [bench.id]: bench.prices } };
-        benchSim = simulate(benchAligned, { ...opts, weights: { [bench.id]: 100 } });
-        const bnav = real ? deflate(benchSim.nav, cpiAxis, cpiBase) : benchSim.nav;
-        bm = metrics(bnav, aligned.dates, { annualization: ann, rfDaily });
-    }
-
-    // ── Coverage + assumptions ──
-    renderCoverage(ctx, sim, bench, benchNote, clamped);
-    renderAssumptions(cfg, m, real, rfDaily);
-
-    // ── Tiles ──
-    const t = sim.totals;
-    $('statsMoney').innerHTML =
-        tile('Final value', usd(finalValue), real ? "in today's dollars" : 'nominal') +
-        tile('You put in', usd(contributed),
-            real
-                ? `${t.contributions} purchase${t.contributions === 1 ? '' : 's'}, in today's dollars`
-                : `${t.contributions} purchase${t.contributions === 1 ? '' : 's'}`) +
-        tile('Profit', usd(profit), real ? 'real, after costs' : 'after costs', profit >= 0 ? 'up' : 'down') +
-        tile('Your return', pct(irr), real ? 'money-weighted, real' : 'money-weighted (IRR)', (irr ?? 0) >= 0 ? 'up' : 'down') +
-        (t.totalFriction > 0
-            ? tile('Paid in friction', usd(real ? t.totalFriction * cpiBase / cpiAxis[cpiAxis.length - 1] : t.totalFriction),
-                `${usdc(t.costsPaid)} trading + ${usdc(t.feesPaid)} fees`, 'down')
-            : '');
-
-    const vsBench = bm ? m.cagr - bm.cagr : null;
-    $('statsStrategy').innerHTML =
-        tile('Growth rate', pct(m.cagr), 'per year, time-weighted', m.cagr >= 0 ? 'up' : 'down') +
-        (bm ? tile(`vs ${bench.id}`, signed(vsBench), `${bench.id} did ${pct(bm.cagr)}`, vsBench >= 0 ? 'up' : 'down') : '') +
-        tile('Worst fall', pct(m.maxDD), `${iso(m.ddFrom)} → ${iso(m.ddTo)}`, 'down') +
-        tile('Volatility', pct(m.vol), 'annualised') +
-        tile('Sharpe', m.sharpe.toFixed(2),
-            m.rfUsed ? `vs T-bills at ${pct(m.rfAnnual, 1)}` : 'assuming cash pays 0%',
-            m.sharpe >= 1 ? 'up' : (m.sharpe < 0 ? 'down' : null)) +
-        tile('Best day', signed(m.best), iso(m.bestAt), 'up') +
-        tile('Worst day', signed(m.worst), iso(m.worstAt), 'down');
-
-    // ── Chart ──
-    // Each contribution restated from the date it was actually made.
-    let realBasis = null;
-    if (real) {
-        realBasis = new Array(aligned.dates.length).fill(0);
-        const byDate = new Map(aligned.dates.map((t, i) => [t, i]));
-        let running = 0, p = 0;
-        const ps = sim.purchases;
-        for (let i = 0; i < aligned.dates.length; i++) {
-            while (p < ps.length && byDate.get(ps[p].t) === i) {
-                running += ps[p].gross * cpiBase / cpiAxis[i];
-                p++;
-            }
-            realBasis[i] = running;
-        }
-    }
-    renderChart(aligned.dates, sim, benchSim, bench, cfg, real, cpiAxis, cpiBase, realBasis);
-
-    // ── Base rates ──
-    await renderSweep(ctx, weights, sim);
-
-    // ── Notices ──
-    await renderNotices(ctx, ids);
-
-    // ── Breakdown + ledger ──
-    renderBreakdown(sim, cfg);
-    renderLedger(sim);
-
-    lastRun = { dates: aligned.dates, sim, benchSim, bench, cfg, real, cpiAxis, cpiBase, realBasis };
-    setStatus(linkWarning ? 'warn' : 'ok',
-        `Done · ${aligned.dates.length.toLocaleString()} trading days` +
-        (linkWarning ? ` — ${linkWarning}` : ''));
-}
-
-function renderCoverage(ctx, sim, bench, benchNote, clamped) {
-    const { aligned, list, cfg } = ctx;
-    const from = iso(aligned.dates[0]), to = iso(aligned.dates[aligned.dates.length - 1]);
-    const years = ((aligned.dates[aligned.dates.length - 1] - aligned.dates[0]) / (365.25 * 86400000)).toFixed(1);
-
-    const bits = [`<b>${from}</b> → <b>${to}</b> · <span class="mono">${aligned.dates.length.toLocaleString()}</span> trading days (${years} years).`];
-
-    // Name the instrument responsible for the window's start — a short
-    // window should never be a mystery.
-    const startLimiters = aligned.limitedBy?.start || [];
-    if (startLimiters.length && cfg.range !== 'custom') {
-        const others = list.filter(s => !startLimiters.includes(s.id));
-        if (others.length) {
-            bits.push(`The window starts where <b>${startLimiters.join(', ')}</b> does — that is the shortest history in this basket. Removing it would unlock more.`);
-        }
-    }
-    if (clamped.includes('start')) {
-        bits.push(cfg.range === 'custom'
-            ? `Your start date is earlier than the data goes, so it was moved to ${from}.`
-            : `The data does not reach back a full ${$('lookback').selectedOptions[0].textContent.toLowerCase()}, so this window is as long as the data allows.`);
-    }
-    if (clamped.includes('end')) bits.push(`Your end date is later than the data goes, so it was moved to ${to}.`);
-
-    // Honest labelling of price-return instruments mixed with total-return.
-    const priceOnly = list.filter(s => s.returns === 'price');
-    if (priceOnly.length) {
-        bits.push(`<b>${priceOnly.map(s => s.id).join(', ')}</b> pay no dividends, so their numbers are price-only while the rest include reinvested income.`);
-    }
-    if (benchNote) bits.push(benchNote);
-    else if (bench?.partial) bits.push(`The ${bench.id} comparison line stops before the end of the window.`);
-
-    $('coverage').innerHTML = bits.join(' ');
-}
-
-function renderAssumptions(cfg, m, real, rfDaily) {
-    const chips = [];
-    chips.push(`<span class="assumption ${real ? 'on' : 'off'}">${real ? "today's dollars" : 'nominal dollars'}</span>`);
-    chips.push(`<span class="assumption ${cfg.costBps ? 'on' : 'warn'}">${cfg.costBps ? `${cfg.costBps} bps trading cost` : 'no trading costs'}</span>`);
-    chips.push(`<span class="assumption ${cfg.feeBps ? 'on' : 'warn'}">${cfg.feeBps ? `${(cfg.feeBps / 100).toFixed(2)}% annual fee` : 'no fees'}</span>`);
-    chips.push(`<span class="assumption ${m.rfUsed ? 'on' : 'warn'}">${m.rfUsed ? 'Sharpe vs real T-bills' : 'Sharpe assumes 0% cash'}</span>`);
-    chips.push(`<span class="assumption warn">no taxes</span>`);
-    chips.push(`<span class="assumption warn">trades at the close</span>`);
-    chips.push(`<span class="assumption ${cfg.rebalance ? 'on' : 'off'}">${cfg.rebalance ? `rebalanced every ${cfg.rebalance}d` : 'never rebalanced'}</span>`);
-    $('assumptions').innerHTML = chips.join('');
-}
-
-async function renderSweep(ctx, weights, sim) {
-    const { aligned, list, ann, cfg, bench } = ctx;
-    const host = $('sweepHost');
-
-    if (!bench) {
-        host.innerHTML = `<div class="notice info"><span class="head">Not available</span>
-            There is no benchmark covering this window, so there is nothing to compute a win rate against.</div>`;
-        return;
-    }
-
-    // Sweep over the FULL history of the basket, not the chosen window,
-    // using the chosen window's length. That is the whole point: how did
-    // this allocation do starting from every other date?
-    const full = alignSeries(list);
-    const benchSeries = await loadSeries(bench.id);
-    const proj = projectOnAxis(benchSeries, full.dates);
-    if (!proj) {
-        host.innerHTML = `<div class="notice info"><span class="head">Not available</span>
-            ${bench.id} does not cover the full history of this basket.</div>`;
-        return;
-    }
-    const sweepBlock = { dates: full.dates, prices: { ...full.prices, [bench.id]: proj.values } };
-    const windowBars = aligned.dates.length;
-    const userStart = full.dates.indexOf(aligned.dates[0]);
-
-    const sweep = baseRateSweep(sweepBlock, {
-        weights, benchmark: bench.id, windowBars,
-        rebalanceDays: cfg.rebalance, costBps: cfg.costBps, feeBps: cfg.feeBps,
-        annualization: ann, userStartIndex: userStart >= 0 ? userStart : null,
-    });
-
-    if (sweep.tooShort || !sweep.count) {
-        host.innerHTML = `<div class="notice"><span class="head">Only one window exists</span>
-            This basket has <b>${full.dates.length.toLocaleString()}</b> trading days of history and you asked for a
-            <b>${windowBars.toLocaleString()}</b>-day window, so there is no second window to compare against.
-            <strong>The result above is a single observation.</strong> Shorten the window or pick instruments with longer histories.</div>`;
-        return;
-    }
-
-    const rate = sweep.winRate;
-    const verdict = sweep.userPercentile == null ? ''
-        : sweep.userPercentile > 0.8 ? 'Your window was one of the better ones.'
-        : sweep.userPercentile < 0.2 ? 'Your window was one of the worse ones.'
-        : 'Your window was fairly typical.';
-
-    const maxAbs = Math.max(...sweep.windows.map(w => Math.abs(w.margin)), 1e-9);
-    const bars = sweep.windows.map(w => {
-        const h = Math.max(4, Math.round(Math.abs(w.margin) / maxAbs * 58));
-        // Match by index, not by margin: two unrelated windows can share a
-        // margin, and float equality would outline both.
-        const you = sweep.userStartIndex != null && w.startIndex === sweep.userStartIndex ? ' you' : '';
-        return `<div class="bar${w.win ? '' : ' lose'}${you}" style="height:${h}px"
-            title="${iso(w.from)} → ${iso(w.to)}: ${signed(w.margin)}/yr vs ${bench.id}"></div>`;
-    }).join('');
-
-    const thin = sweep.independentWindows < 4;
-    host.innerHTML = `
-    <div class="sweep">
-        <div class="sweep-head">
-            <span class="big">${sweep.wins} of ${sweep.count}</span>
-            <span class="cap">windows of this length beat ${bench.id}</span>
-            <span class="cap" style="margin-left:auto">${pct(rate, 0)} win rate</span>
-        </div>
-        <div class="sweep-bars">${bars}</div>
-        <div class="sweep-foot">
-            <span><b>Median edge</b> ${signed(sweep.medianMargin)}/yr</span>
-            <span><b>Worst</b> ${signed(sweep.worstMargin)}/yr</span>
-            <span><b>Best</b> ${signed(sweep.bestMargin)}/yr</span>
-            ${verdict ? `<span><b>${verdict}</b></span>` : ''}
-        </div>
+<footer class="footer">
+    <a href="https://observation-deck.netlify.app/">Observation Deck</a> &middot;
+    <a href="https://github.com/00xJS/Chronoticker">GitHub</a> &middot;
+    <a href="guide.html">Guide</a>
+    <div class="disclaimer">
+        Educational tool. Backtests describe the past and do not predict the future.
+        Nothing here is financial advice.
     </div>
-    ${thin ? `<div class="notice"><span class="head">Read this before believing the number above</span>
-        Those ${sweep.count} windows overlap heavily. This basket only contains
-        <strong>${sweep.independentWindows} genuinely independent</strong> window${sweep.independentWindows === 1 ? '' : 's'}
-        of this length, so the win rate is far less meaningful than it looks. Longer histories —
-        the index and bond funds go back to the 1990s, and the total US market to 1926 — give a real base rate.</div>` : ''}`;
-}
+</footer>
 
-async function renderNotices(ctx, ids) {
-    const { list } = ctx;
-    const host = $('noticeHost');
-    const out = [];
-
-    // Selection bias, measured rather than merely asserted.
-    const biasedGroups = [...new Set(ids.map(id => catalogEntry(id)?.group).filter(g =>
-        CATALOG.groups.find(x => x.id === g)?.warn === 'selection'))];
-
-    for (const g of biasedGroups) {
-        const groupIds = CATALOG.instruments.filter(i => i.group === g).map(i => i.id);
-        const loaded = {};
-        for (const id of groupIds) { const s = await loadSeries(id); if (s) loaded[id] = s; }
-        const b = await loadSeries(benchmarkId());
-        if (!b) continue;
-        loaded[benchmarkId()] = b;
-        const bias = groupBias(loaded, groupIds, benchmarkId());
-        if (!bias) continue;
-        const label = CATALOG.groups.find(x => x.id === g)?.label || g;
-        out.push(`<div class="notice"><span class="head">This menu is rigged in your favour</span>
-            <strong>${bias.beat} of ${bias.count}</strong> instruments in “${label}” beat ${benchmarkId()} over their full
-            shared history — the median did <strong>${pct(bias.median)}</strong> a year against the benchmark's
-            <strong>${pct(bias.benchmark)}</strong>. They are on the menu because they are famous today, which is
-            selection on the outcome. A portfolio built from this group was always going to look good, and that
-            says nothing about your allocation.
-            ${CATALOG.warnings?.selection ? '' : ''}</div>`);
-    }
-
-    // Contributions buy at the target weights, so feeding money into a basket
-    // you never rebalance quietly pulls it back toward target. That is a real
-    // effect on the growth rate — several percentage points a year on a
-    // concentrated basket — and it is invisible unless the page says it.
-    if (ids.length > 1 && ctx.cfg.contribution > 0 && !ctx.cfg.rebalance) {
-        out.push(`<div class="notice info"><span class="head">Your contributions are quietly rebalancing you</span>
-            You are adding money at your target weights but never rebalancing. Each contribution
-            therefore buys proportionally more of whatever has lagged, which pulls the portfolio back
-            toward target — <strong>a bigger contribution is a stronger pull</strong>, and it changes
-            the growth rate above, not just the final value. Set a rebalance cadence to separate the
-            two effects, or set contributions to zero to see the allocation drift on its own.</div>`);
-    }
-
-    host.innerHTML = out.join('');
-}
-
-function renderBreakdown(sim, cfg) {
-    const rows = Object.entries(sim.perAsset)
-        .sort((a, b) => b[1].finalValue - a[1].finalValue);
-    const best = rows.reduce((a, b) => (b[1].priceReturn > a[1].priceReturn ? b : a));
-
-    $('breakdownHost').innerHTML = `
-    <table class="breakdown">
-        <thead><tr>
-            <th>Holding</th><th>Weight</th><th>Start</th><th>End</th>
-            <th>Price return</th><th>Value at end</th><th>Share of portfolio</th>
-        </tr></thead>
-        <tbody>${rows.map(([sym, a]) => `
-            <tr>
-                <td>${sym}${sym === best[0] ? ' <span class="best-badge">best</span>' : ''}</td>
-                <td>${a.weight.toFixed(0)}%</td>
-                <td>${usdc(a.startPrice)}</td>
-                <td>${usdc(a.endPrice)}</td>
-                <td class="${a.priceReturn >= 0 ? 'up' : 'down'}">${signed(a.priceReturn)}</td>
-                <td>${usd(a.finalValue)}</td>
-                <td>${pct(a.share, 1)}</td>
-            </tr>`).join('')}
-        </tbody>
-    </table>
-    <p class="field-hint" style="padding:10px 2px 0">
-        Price return is what the holding itself did over the window. It is deliberately not a
-        per-holding profit figure: with rebalancing or contributions, how much money each holding
-        actually made depends on when the money arrived, which is a portfolio-level question answered
-        by the returns above.
-    </p>`;
-}
-
-function renderLedger(sim) {
-    if (!sim.purchases.length || sim.purchases.length < 2) { $('ledgerHost').innerHTML = ''; return; }
-    const rows = [...sim.purchases].reverse().slice(0, 520);
-    $('ledgerHost').innerHTML = `
-    <details class="ledger">
-        <summary>Every purchase (${sim.purchases.length})</summary>
-        <div class="ledger-scroll">
-            <table class="breakdown">
-                <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Cost</th><th>Invested</th></tr></thead>
-                <tbody>${rows.map(p => `
-                    <tr>
-                        <td>${iso(p.t)}</td>
-                        <td>${p.kind === 'initial' ? 'Opening' : 'Contribution'}</td>
-                        <td>${usdc(p.gross)}</td>
-                        <td>${p.cost ? usdc(p.cost) : '—'}</td>
-                        <td>${usdc(p.net)}</td>
-                    </tr>`).join('')}
-                </tbody>
-            </table>
-        </div>
-        ${sim.purchases.length > 520 ? `<p class="field-hint" style="padding:8px 2px">Showing the most recent 520 of ${sim.purchases.length}.</p>` : ''}
-    </details>`;
-}
-
-// ── Duel ────────────────────────────────────────────────────────────
-
-async function runDuel(ctx) {
-    const { cfg, aligned, list, ann, rfDaily, cpiAxis, cpiBase, real, bench, clamped } = ctx;
-    const weights = {};
-    cfg.alloc.forEach(a => weights[a.sym] = a.weight);
-
-    const d = duel(aligned, {
-        weights, total: cfg.total, deployments: cfg.deployments,
-        deploymentDays: 30, rebalanceDays: cfg.rebalance,
-        costBps: cfg.costBps, feeBps: cfg.feeBps,
-        annualization: ann, rfDaily,
-    });
-
-    // Real mode has to reach the duel too, or the assumption chip says
-    // "today's dollars" over a table of nominal ones. Inflation hits both
-    // sides identically so the winner never changes — but the magnitudes
-    // do, and a label that does not match its number is the exact failure
-    // this rebuild exists to remove.
-    if (real) {
-        const toReal = arr => arr.map((v, i) => v * cpiBase / cpiAxis[i]);
-        for (const side of [d.lump, d.dose]) {
-            side.wealth = toReal(side.wealth);
-            side.nav = deflate(side.nav, cpiAxis, cpiBase);
-            side.metrics = metrics(side.nav, aligned.dates, { annualization: ann, rfDaily });
-            side.final = side.wealth[side.wealth.length - 1];
-            side.irr = xirr(deflateFlows(side.flows, aligned.dates, cpiAxis, cpiBase));
-        }
-        d.dose.invested = toReal(d.dose.invested);
-    }
-
-    renderCoverage(ctx, null, bench, null, clamped);
-    renderAssumptions(cfg, d.lump.metrics, real, rfDaily);
-
-    const moneyWinner = d.lump.final >= d.dose.final ? 'lump' : 'dose';
-    const riskWinner = d.lump.metrics.maxDD >= d.dose.metrics.maxDD ? 'lump' : 'dose';
-    const gap = Math.abs(d.lump.final - d.dose.final);
-
-    $('duelStats').innerHTML =
-        tile('All at once', usd(d.lump.final), 'invested on day one', moneyWinner === 'lump' ? 'up' : null) +
-        tile('Spread out', usd(d.dose.final), `${cfg.deployments} monthly instalments`, moneyWinner === 'dose' ? 'up' : null) +
-        tile('Difference', usd(gap), `${moneyWinner === 'lump' ? 'all at once' : 'spreading out'} ended ahead`) +
-        tile('Smoother ride', riskWinner === 'lump' ? 'All at once' : 'Spread out',
-            `${pct(Math.max(d.lump.metrics.maxDD, d.dose.metrics.maxDD))} vs ${pct(Math.min(d.lump.metrics.maxDD, d.dose.metrics.maxDD))} worst fall`);
-
-    const row = (label, lens, a, b, better) => {
-        const aWin = better === 'a', bWin = better === 'b';
-        return `<tr>
-            <td>${label}<div class="lens">${lens}</div></td>
-            <td class="${aWin ? 'win' : ''}">${a}</td>
-            <td class="${bWin ? 'win' : ''}">${b}</td>
-        </tr>`;
-    };
-    const cmp = (a, b, higherIsBetter = true) =>
-        Math.abs(a - b) < 1e-12 ? null : ((a > b) === higherIsBetter ? 'a' : 'b');
-
-    $('duelTable').innerHTML = `
-    <thead><tr><th>Measure</th><th>All at once</th><th>Spread out</th></tr></thead>
-    <tbody>
-        ${row('Final value', 'money', usd(d.lump.final), usd(d.dose.final), cmp(d.lump.final, d.dose.final))}
-        ${/* No separate money-weighted row: both sides commit the whole sum on
-              day one under this comparison's fairness contract, so with a single
-              cash flow the money-weighted and time-weighted returns are the same
-              number. Printing it twice under two names would imply a distinction
-              that does not exist here. */''}
-        ${row('Growth rate', 'per year', pct(d.lump.metrics.cagr), pct(d.dose.metrics.cagr), cmp(d.lump.metrics.cagr, d.dose.metrics.cagr))}
-        ${row('Worst fall', 'risk', pct(d.lump.metrics.maxDD), pct(d.dose.metrics.maxDD), cmp(d.lump.metrics.maxDD, d.dose.metrics.maxDD))}
-        ${row('Volatility', 'risk', pct(d.lump.metrics.vol), pct(d.dose.metrics.vol), cmp(d.lump.metrics.vol, d.dose.metrics.vol, false))}
-        ${row('Sharpe', 'risk-adjusted', d.lump.metrics.sharpe.toFixed(2), d.dose.metrics.sharpe.toFixed(2), cmp(d.lump.metrics.sharpe, d.dose.metrics.sharpe))}
-        ${row('Worst day', 'risk', signed(d.lump.metrics.worst), signed(d.dose.metrics.worst), cmp(d.lump.metrics.worst, d.dose.metrics.worst))}
-        ${row('Paid in friction', 'cost', usdc(d.lump.costs), usdc(d.dose.costs), cmp(d.lump.costs, d.dose.costs, false))}
-    </tbody>`;
-
-    // ── Narrative, generated from the data rather than asserted ──
-    const p = aligned.prices;
-    const firstDate = iso(aligned.dates[0]), lastDate = iso(aligned.dates[aligned.dates.length - 1]);
-    const deployEnd = Math.min(aligned.dates.length - 1, d.dose.fullyInvestedAt ?? aligned.dates.length - 1);
-    let riseDuringDeploy = 0;
-    for (const [sym, w] of Object.entries(weights)) {
-        riseDuringDeploy += (w / 100) * (p[sym][deployEnd] / p[sym][0] - 1);
-    }
-    const story = [];
-    story.push(`Both start with <span class="num">${usd(cfg.total)}</span> on <span class="num">${firstDate}</span>. Investing it all immediately means the whole amount is exposed from day one. Spreading it over ${cfg.deployments} months means the rest sits in cash${d.cashEarnsRf ? ', earning the actual Treasury-bill rate of the day' : ', earning nothing'}, and gets invested a slice at a time.`);
-    if (riseDuringDeploy > 0.005) {
-        story.push(`The market <strong>rose ${pct(riseDuringDeploy)}</strong> while the money was still being deployed, so every later instalment bought at a higher price than day one. That is why investing all at once usually wins: the market goes up more often than it goes down, and cash on the sidelines misses it.`);
-    } else if (riseDuringDeploy < -0.005) {
-        story.push(`The market <strong>fell ${pct(Math.abs(riseDuringDeploy))}</strong> while the money was still being deployed, so the later instalments bought cheaper than day one. That is the scenario where spreading out pays.`);
-    } else {
-        story.push(`The market was <strong>roughly flat</strong> during the deployment period, so neither approach got much of an entry-price advantage.`);
-    }
-    story.push(`The counterweight is on the risk side: the worst fall was <span class="num">${pct(d.lump.metrics.maxDD)}</span> investing all at once versus <span class="num">${pct(d.dose.metrics.maxDD)}</span> spreading out. <strong>Spreading out buys a calmer ride, and usually pays for it in returns.</strong>`);
-    if (d.neverFullyInvested) {
-        story.push(`Note: ${cfg.deployments} instalments do not fit inside this window — <span class="num">${usd(d.dose.cashLeft)}</span> was never invested. Use a longer window or fewer instalments.`);
-    }
-    story.push(`<span style="color:var(--faint)">Assumes no taxes, trades at the closing price, and that you would actually have gone through with it.</span>`);
-    $('duelStory').innerHTML = story.map(s => `<p style="margin:0 0 10px">${s}</p>`).join('');
-
-    renderDuelChart(aligned.dates, d, cfg);
-
-    // Base rate for the duel itself: how often does spreading out win?
-    await renderDuelSweep(ctx, weights);
-
-    lastRun = { dates: aligned.dates, duel: d, cfg, real, cpiAxis, cpiBase };
-    setStatus(linkWarning ? 'warn' : 'ok',
-        `Done · ${aligned.dates.length.toLocaleString()} trading days` +
-        (linkWarning ? ` — ${linkWarning}` : ''));
-}
-
-async function renderDuelSweep(ctx, weights) {
-    const { list, ann, cfg, aligned, rfDaily } = ctx;
-    const host = $('duelSweepHost');
-    const full = alignSeries(list);
-    const windowBars = aligned.dates.length;
-    if (windowBars >= full.dates.length) {
-        host.innerHTML = `<div class="notice"><span class="head">Only one window exists</span>
-            There is not enough history to replay this comparison from other start dates.</div>`;
-        return;
-    }
-
-    // The replay has to make the same cash assumption the paragraph above it
-    // states. Running the sweep without a risk-free rate handicaps the
-    // spread-out side in every window and biases the win rate toward
-    // investing all at once — by over $3,000 on a five-percent window.
-    const rfSeries = await loadSeries('RF');
-    const rfFull = rfSeries
-        ? rfOnAxis({ dates: rfSeries.dates, values: rfSeries.values }, full.dates)
-        : null;
-
-    const step = Math.max(21, Math.ceil((full.dates.length - windowBars) / 200));
-    let wins = 0, count = 0, marginSum = 0;
-    const bars = [];
-    for (let s = 0; s + windowBars < full.dates.length; s += step) {
-        const slice = { dates: full.dates.slice(s, s + windowBars + 1), prices: {} };
-        for (const k of Object.keys(full.prices)) slice.prices[k] = full.prices[k].slice(s, s + windowBars + 1);
-        let r;
-        try {
-            r = duel(slice, {
-                weights, total: cfg.total, deployments: cfg.deployments,
-                rebalanceDays: cfg.rebalance, costBps: cfg.costBps, feeBps: cfg.feeBps,
-                annualization: ann,
-                rfDaily: rfFull ? rfFull.slice(s, s + windowBars + 1) : null,
-            });
-        } catch { continue; }
-        const margin = r.lump.final / r.dose.final - 1;
-        const lumpWins = r.lump.final > r.dose.final;
-        if (lumpWins) wins++;
-        count++; marginSum += margin;
-        bars.push({ margin, lumpWins, from: slice.dates[0], to: slice.dates[slice.dates.length - 1] });
-    }
-    if (!count) { host.innerHTML = ''; return; }
-
-    const maxAbs = Math.max(...bars.map(b => Math.abs(b.margin)), 1e-9);
-    host.innerHTML = `
-    <div class="sweep">
-        <div class="sweep-head">
-            <span class="big">${pct(wins / count, 0)}</span>
-            <span class="cap">of ${count} windows, investing all at once ended ahead</span>
-        </div>
-        <div class="sweep-bars">${bars.map(b => `
-            <div class="bar${b.lumpWins ? '' : ' lose'}" style="height:${Math.max(4, Math.round(Math.abs(b.margin) / maxAbs * 58))}px"
-                title="${iso(b.from)} → ${iso(b.to)}: all-at-once ${signed(b.margin)} vs spread out"></div>`).join('')}
-        </div>
-        <div class="sweep-foot">
-            <span><b>Average edge to investing all at once</b> ${signed(marginSum / count)}</span>
-            <span style="color:var(--faint)">Green = all at once won</span>
-        </div>
-    </div>`;
-}
-
-// ── Charts ──────────────────────────────────────────────────────────
-
-function deckChartTheme() {
-    const css = getComputedStyle(document.documentElement);
-    const v = n => css.getPropertyValue(n).trim();
-    Chart.defaults.color = v('--muted');
-    Chart.defaults.borderColor = 'rgba(255,255,255,0.07)';
-    Chart.defaults.font.family = v('--font-sans');
-    return {
-        accent: v('--accent'), muted: v('--muted'), faint: v('--faint'),
-        magenta: v('--magenta'), live: v('--live'), down: v('--down'),
-        grid: 'rgba(255,255,255,0.07)', tooltipBg: v('--bg-raised'), text: v('--text'),
-        series: v('--accent'), series2: '#5b8def',
-    };
-}
-
-// Category labels, not a time scale: Chart.js time scales need a date
-// adapter library and none is loaded. ISO strings sort correctly and read
-// fine on the axis, which is all this needs.
-const baseScales = th => ({
-    x: {
-        grid: { display: false },
-        ticks: { maxTicksLimit: 8, color: th.faint, maxRotation: 0, autoSkip: true },
-    },
-    y: {
-        grid: { color: th.grid },
-        ticks: { color: th.faint, callback: v => '$' + Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }) },
-    },
-});
-
-function renderChart(dates, sim, benchSim, bench, cfg, real, cpiAxis, cpiBase, realBasis) {
-    const th = deckChartTheme();
-    // Wealth deflates with the price level at each bar. The CONTRIBUTED line
-    // does not: it is a running sum of dollars paid on many different dates,
-    // so it is rebuilt separately in runBacktest and passed in.
-    const adj = arr => real && cpiAxis
-        ? arr.map((v, i) => v * cpiBase / cpiAxis[i])
-        : arr;
-
-    const data = { labels: dates.map(iso), datasets: [] };
-    data.datasets.push({
-        label: 'Your portfolio', data: adj(sim.equity),
-        borderColor: th.accent, backgroundColor: 'rgba(255,154,68,0.12)',
-        borderWidth: 2, pointRadius: 0, fill: true, tension: 0.05,
-    });
-    if (benchSim && bench) {
-        data.datasets.push({
-            label: `${bench.id} with the same money`, data: adj(benchSim.equity),
-            borderColor: th.series2, borderWidth: 1.6, pointRadius: 0, borderDash: [5, 4], fill: false, tension: 0.05,
-        });
-    }
-    if (cfg.contribution > 0 || sim.purchases.length > 1) {
-        data.datasets.push({
-            label: 'What you put in', data: realBasis || sim.basis,
-            borderColor: th.faint, borderWidth: 1.2, pointRadius: 0, borderDash: [2, 3], fill: false, stepped: true,
-        });
-    }
-
-    if (chart) chart.destroy();
-    chart = new Chart($('chart'), {
-        type: 'line', data,
-        options: {
-            responsive: true, maintainAspectRatio: true, aspectRatio: 2.6, animation: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { labels: { color: th.muted, boxWidth: 12, usePointStyle: true } },
-                tooltip: {
-                    backgroundColor: th.tooltipBg, borderColor: th.grid, borderWidth: 1,
-                    titleColor: th.text, bodyColor: th.muted,
-                    callbacks: { label: c => `${c.dataset.label}: $${Math.round(c.parsed.y).toLocaleString()}` },
-                },
-            },
-            scales: baseScales(th),
-        },
-    });
-}
-
-function renderDuelChart(dates, d, cfg) {
-    const th = deckChartTheme();
-    if (duelChart) duelChart.destroy();
-    duelChart = new Chart($('duelChart'), {
-        type: 'line',
-        data: {
-            labels: dates.map(iso),
-            datasets: [
-                { label: 'All at once', data: d.lump.wealth, borderColor: th.accent, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.05 },
-                { label: 'Spread out', data: d.dose.wealth, borderColor: th.series2, borderWidth: 2, pointRadius: 0, fill: false, tension: 0.05 },
-                { label: 'Money actually invested', data: d.dose.invested, borderColor: th.faint, borderWidth: 1.2, borderDash: [2, 3], pointRadius: 0, fill: false, stepped: true },
-            ],
-        },
-        options: {
-            responsive: true, maintainAspectRatio: true, aspectRatio: 2.6, animation: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { labels: { color: th.muted, boxWidth: 12, usePointStyle: true } },
-                tooltip: {
-                    backgroundColor: th.tooltipBg, borderColor: th.grid, borderWidth: 1,
-                    titleColor: th.text, bodyColor: th.muted,
-                    callbacks: { label: c => `${c.dataset.label}: $${Math.round(c.parsed.y).toLocaleString()}` },
-                },
-            },
-            scales: baseScales(th),
-        },
-    });
-}
-
-// ── Freshness ───────────────────────────────────────────────────────
-
-function reportFreshness(list, aligned) {
-    const now = Date.now();
-    // Instruments whose upstream publishes monthly are EXPECTED to lag by
-    // four to six weeks. Warning about them would train the user to ignore
-    // the warning, which is how the June 2026 outage went unnoticed for
-    // eight weeks. Budgets here match scripts/verify-data.js deliberately.
-    const budget = id => (id === 'USMKT' || id === 'CPI') ? 75 : (id === 'RF' ? 45 : 7);
-    const stale = list.filter(s => (now - s.dates[s.dates.length - 1]) / 86400000 > budget(s.id));
-    if (!stale.length) return;
-    const worst = stale.map(s => `${s.id} (${iso(s.dates[s.dates.length - 1])})`).join(', ');
-    setStatus('warn', `Done · ${aligned.dates.length.toLocaleString()} trading days — but the prices for ${worst} are behind. The nightly refresh may be failing.`);
-}
-
-// ── Export ──────────────────────────────────────────────────────────
-
-function exportCsv() {
-    if (!lastRun) return;
-    const { dates, real, cpiAxis, cpiBase } = lastRun;
-    // The CSV must agree with what was on screen. Exporting nominal columns
-    // from a run the page labelled "today's dollars" would be the same class
-    // of lie the metrics rebuild removed, just moved into a file.
-    const adj = arr => (real && cpiAxis)
-        ? arr.map((v, i) => (v == null ? v : v * cpiBase / cpiAxis[i]))
-        : arr;
-    const unit = real ? '_real' : '_nominal';
-    let head, rows;
-    if (lastRun.duel) {
-        // The duel's series were already restated in place when real mode is on.
-        const d = lastRun.duel;
-        head = `date,all_at_once${unit},spread_out${unit},invested${unit}`;
-        rows = dates.map((t, i) => [iso(t), d.lump.wealth[i], d.dose.wealth[i], d.dose.invested[i]].join(','));
-    } else {
-        const { sim, benchSim, bench } = lastRun;
-        const equity = adj(sim.equity), basis = lastRun.realBasis || sim.basis;
-        const benchEquity = benchSim ? adj(benchSim.equity) : null;
-        head = `date,portfolio${unit},contributed${unit},nav_index${benchEquity ? `,${bench.id}${unit}` : ''}`;
-        rows = dates.map((t, i) => {
-            const cols = [iso(t), equity[i], basis[i], sim.nav[i] ?? ''];
-            if (benchEquity) cols.push(benchEquity[i]);
-            return cols.join(',');
-        });
-    }
-    const blob = new Blob([head + '\n' + rows.join('\n') + '\n'], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `chronoticker-${iso(dates[0])}-to-${iso(dates[dates.length - 1])}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-}
-
-// ── Wiring ──────────────────────────────────────────────────────────
-
-$('addAsset').addEventListener('click', () => makeRow(AVAILABLE[0]?.id || 'SPY', 0));
-$('equalWeights').addEventListener('click', () => {
-    const rows = [...allocsEl.querySelectorAll('.alloc-row')];
-    if (!rows.length) return;
-    // Integer weights that always total exactly 100 — no 33.33% noise.
-    const base = Math.floor(100 / rows.length);
-    const remainder = 100 - base * rows.length;
-    rows.forEach((row, i) => row.querySelector('input').value = base + (i < remainder ? 1 : 0));
-    updateTotal();
-});
-
-$('allocPresets').addEventListener('click', e => {
-    const key = e.target?.dataset?.preset;
-    if (!key) return;
-    const dropped = setAllocations(ALLOC_PRESETS[key]);
-    if (dropped.length) {
-        setStatus('warn', `${e.target.textContent} needs ${dropped.join(', ')}, which has not been fetched yet — ` +
-            `loaded the rest, so the weights no longer total 100%. Run the "Refresh stock data" action to backfill.`);
-    } else {
-        setStatus('', 'Ready.');
-    }
-});
-
-$('regimePresets').addEventListener('click', e => {
-    const key = e.target?.dataset?.regime;
-    if (!key) return;
-    const r = REGIMES[key];
-    $('lookback').value = 'custom';
-    $('fromDate').value = r.from;
-    $('toDate').value = r.to;
-    syncRangeFields();
-    run();
-});
-
-$('lookback').addEventListener('change', syncRangeFields);
-['fromDate', 'toDate'].forEach(id => $(id).addEventListener('change', () => {
-    if ($(id).value) { $('lookback').value = 'custom'; syncRangeFields(); }
-}));
-
-$('modeBacktest').addEventListener('click', () => setMode('backtest'));
-$('modeDuel').addEventListener('click', () => setMode('duel'));
-$('run').addEventListener('click', run);
-$('exportCsv').addEventListener('click', exportCsv);
-$('copyLink').addEventListener('click', async () => {
-    try {
-        await navigator.clipboard.writeText(location.href);
-        $('copyLink').textContent = 'Link copied';
-        setTimeout(() => $('copyLink').textContent = 'Copy link to this run', 1600);
-    } catch {
-        $('copyLink').textContent = location.href;
-    }
-});
-
-// ── Boot ────────────────────────────────────────────────────────────
-
-(async function boot() {
-    try {
-        await loadCatalog();
-        AVAILABLE = await availableInstruments();
-        if (!AVAILABLE.length) throw new Error('No price data found under /data/.');
-
-        const fromURL = readURL();
-        if (!fromURL) setAllocations([['AAPL', 40], ['MSFT', 30], ['NVDA', 30]]);
-
-        const total = CATALOG.instruments.length;
-        if (AVAILABLE.length < total) {
-            setStatus('', `Ready · ${AVAILABLE.length} of ${total} instruments have data (the rest have not been fetched yet).`);
-        } else {
-            setStatus('', `Ready · ${AVAILABLE.length} instruments available.`);
-        }
-        if (fromURL) run();
-    } catch (err) {
-        console.error(err);
-        setStatus('error', `Could not start: ${err.message}`);
-    }
-})();
-</script>
+<script type="module" src="assets/app.js"></script>
 </body>
 </html>
