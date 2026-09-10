@@ -155,13 +155,28 @@
         </p>
 
         <h2>Running one</h2>
+        <p>
+            The page opens on a set of preset cards. Clicking one loads that allocation and runs it
+            straight away, which is the quickest way to see what the output looks like. The cards
+            step aside after the first run — reload the page to get them back, or use the same
+            presets in the control rail under <em>Load</em>.
+        </p>
+        <p>
+            Everything you can change lives in that rail down the left-hand side, in four panels:
+            holdings, money, window, and frictions. Results appear beside it.
+        </p>
         <ol>
-            <li><strong>Pick holdings and weights.</strong> They must total 100%. <em>Equal weights</em> splits them evenly.</li>
+            <li><strong>Pick holdings and weights.</strong> They must total 100%. Drag a divider in the bar above the list to shift weight between two neighbouring holdings, or type the numbers directly. <em>Even out</em> splits them evenly, in whole percentage points that always total exactly 100.</li>
             <li><strong>Set the money.</strong> A starting amount, a regular contribution, or both. Either can be zero.</li>
             <li><strong>Choose a time range.</strong> Presets are measured back from the most recent day of data, so a "5 years" window stays five years long even if the data refresh stalls. <em>Custom dates</em> lets you pin an exact period.</li>
             <li><strong>Decide the rest.</strong> Rebalancing, trading costs, annual fee, and whether to measure in nominal or inflation-adjusted dollars.</li>
-            <li><strong>Press Run.</strong> The address bar updates to a link that reproduces exactly this run — copy it, bookmark it, send it to someone.</li>
+            <li><strong>Run it.</strong> <em>Live</em>, beside the Run button at the foot of the rail, is on by default: change any control and the results recalculate on their own. Turn it off if you would rather set several things up first and press Run once.</li>
         </ol>
+        <p>
+            Either way, the address bar updates to a link that reproduces exactly this run — copy it,
+            bookmark it, send it to someone. <em>Copy link to this run</em>, underneath the results,
+            does the same thing.
+        </p>
 
         <h2>Reading the results</h2>
 
@@ -174,18 +189,63 @@
         </p>
 
         <h3>The numbers</h3>
+        <p>
+            The headline figure at the top, and the three stats set beside it, are about
+            <strong>your money</strong>: what it became, what you put in, and what that earned. The
+            tiles further down under <em>The strategy</em> are about the <strong>allocation</strong>
+            itself, and none of them move when you change how much you invested or when.
+        </p>
         <dl class="defs">
             <div class="def"><dt>Final value</dt><dd>What the portfolio is worth on the last day, after any costs and fees.</dd></div>
             <div class="def"><dt>You put in</dt><dd>Every dollar you contributed, including the opening amount, and how many separate purchases that took.</dd></div>
             <div class="def"><dt>Profit</dt><dd>Final value minus what you put in.</dd></div>
             <div class="def"><dt>Your return</dt><dd>The money-weighted rate (IRR) — the annual rate that, applied to each contribution from the day it landed, produces the final value.</dd></div>
             <div class="def"><dt>Growth rate</dt><dd>The time-weighted rate. The strategy's own return, immune to contribution timing.</dd></div>
+            <div class="def"><dt>vs the benchmark</dt><dd>Your growth rate minus the benchmark's, in percentage points per year, both time-weighted. The sub-line states what the benchmark itself did — this is the only place that number appears. It shows up only when a benchmark actually covers your window.</dd></div>
             <div class="def"><dt>Worst fall</dt><dd>The deepest peak-to-trough drop, with the dates it happened. <strong>The number people ignore and shouldn't.</strong> A 30% growth rate with a 70% fall is brutal to actually live through.</dd></div>
             <div class="def"><dt>Volatility</dt><dd>How much the daily value jumps around, annualised. Broad index funds run 15–20%; single tech stocks are often double that.</dd></div>
             <div class="def"><dt>Sharpe</dt><dd>Return per unit of risk, measured <strong>above what cash paid at the time</strong> using real Treasury-bill rates. Roughly: under 0.5 is poor, around 1 is good, above 2 is rare. Earlier versions assumed cash paid 0%, which quietly inflated this.</dd></div>
             <div class="def"><dt>Best / worst day</dt><dd>The single biggest up and down day, with dates. A gut-check on tail risk.</dd></div>
             <div class="def"><dt>Paid in friction</dt><dd>Trading costs plus management fees, in dollars. Only appears when you have modelled some.</dd></div>
         </dl>
+
+        <h3>The growth chart</h3>
+        <p>
+            Your portfolio, plus the benchmark given exactly the same money on exactly the same
+            dates, plus — once you are contributing rather than dropping in a lump — a stepped line
+            showing what you actually paid in. Click any of them in the legend to take it off the
+            chart.
+        </p>
+        <p>
+            The controls next to the <em>Growth</em> label change how you look at it.
+            <em>Log</em> switches the value axis to logarithmic, which is the honest way to read a
+            long window — on a linear axis a century of compounding flattens the first fifty years
+            into a line along the floor, and a doubling in 1935 looks like nothing next to a doubling
+            in 2020. <em>Drawdown</em>, on by default, shades the deepest peak-to-trough fall, so the
+            worst-fall number in the tiles has a shape attached to it. Dragging across the chart
+            zooms into that span, and <em>Reset zoom</em> appears while you are zoomed in.
+        </p>
+
+        <h3>Per holding, and the receipts</h3>
+        <p>
+            Below the base rate, <em>Per holding</em> breaks the basket out one line at a time —
+            start price, end price, price return, and what each holding was worth at the end. The
+            colour dot matches that holding's band in the weight bar and its line on the chart, so
+            the same colour means the same thing everywhere.
+        </p>
+        <p>
+            Price return is deliberately <strong>not</strong> a per-holding profit figure. Once you
+            are rebalancing or contributing, how much money a holding actually made depends on when
+            the money arrived, which is a portfolio-level question — the returns above answer it and
+            a per-holding column cannot.
+        </p>
+        <p>
+            <em>Every purchase</em> expands into the ledger behind "You put in": every buy, its date,
+            the gross amount, what the trade cost and what was left to invest. <em>Download the
+            numbers (CSV)</em> exports the full daily series, and it exports whatever you are
+            currently looking at — ask for today's dollars on screen and the file is in today's
+            dollars too, with the column names saying so.
+        </p>
 
         <h3>"Was this window lucky?"</h3>
         <p>
@@ -194,8 +254,9 @@
         <p>
             A single backtest is <strong>one observation</strong>. Chronoticker replays your exact
             configuration starting from every other date the data allows and shows how often it
-            actually beat the benchmark. Green bars are windows you won, red are windows you lost,
-            and your own window is outlined.
+            actually beat the benchmark. Each bar is one window's margin against the benchmark:
+            bars above the line are windows you won, bars below it are windows you lost, and the
+            taller the bar the wider the margin. Your own window is outlined.
         </p>
         <p>
             If your allocation beat the index in 9 of 10 windows, that is evidence. If it beat it in
@@ -220,8 +281,13 @@
 
         <h2>All at once vs. spread out</h2>
         <p>
-            The second mode answers a different question: you have a lump of money — invest it all
-            today, or feed it in over a year?
+            The second tab at the top of the page answers a different question: you have a lump of
+            money — invest it all today, or feed it in over the next six months to three years?
+        </p>
+        <p>
+            Selecting it swaps the Money panel for two fields: <strong>Total to invest</strong>, and
+            <strong>Spread over</strong>, which sets how many equal monthly instalments the money is
+            fed in as — 6, 12, 24 or 36.
         </p>
         <p>
             Both sides start with the same total counted as wealth, so the drawdowns are directly
@@ -239,9 +305,9 @@
 
         <h2>Jump to a crisis</h2>
         <p>
-            The regime buttons load specific historical windows: the dot-com bust, 2008, the lost
-            decade, the COVID crash, the 2022 bear market, 1973–74 stagflation, and the 1929–32
-            Depression.
+            Under <em>Jump to</em> in the window panel, seven buttons set the dates to a specific
+            historical window and run it: the dot-com bust, 2008, the lost decade, the COVID crash,
+            the 2022 bear market, 1973–74 stagflation, and the 1929–32 Depression.
         </p>
         <p>
             Most holdings will not reach back that far — the funds mostly start in the 1990s or
