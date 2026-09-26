@@ -23,7 +23,7 @@ Every run is a URL. Copy the link, get the run.
 ```
 GitHub Action (nightly 02:00 UTC)        GitHub Action (weekly, Sun 03:30 UTC)
     ↓ scripts/fetch-data.js                  ↓ scripts/fetch-macro.js
-    ↓ Tiingo (token, 1990→today)             ↓ Ken French + FRED (keyless)
+    ↓ Tiingo (token, 1990→today)             ↓ Ken French + FRED (API key)
     ↓ data/AAPL.json, data/SPY.json…         ↓ data/USMKT.json, RF.json, CPI.json
                     ↓                                    ↓
               scripts/verify-data.js  ← the gate; also writes data/manifest.json
@@ -41,6 +41,8 @@ Keyless live stock-data sources have progressively locked out scripted access: Y
 
 The fix was two-part: fetch from **Tiingo** (sanctioned free API, token auth, works from any IP), and add a **validation gate** so a stalled upstream can never again pass as a green run. For a backtester this architecture is correct anyway — historical data does not change intraday.
 
+FRED's keyless CSV export went the same way for GitHub's runners in August 2026, so CI now reads FRED through its API with a free key. While FRED was out of reach, the stale CPI deadlocked both workflows: each refused to commit while *any* file was stale, so each was waiting on the other. The gate now fails a job only on staleness in the files that job refreshes.
+
 ### Files
 
 | Path | What it is |
@@ -52,8 +54,8 @@ The fix was two-part: fetch from **Tiingo** (sanctioned free API, token auth, wo
 | [`data/catalog.json`](data/catalog.json) | The instrument registry. **Single source of truth** — the menu and the fetch scripts both read it. |
 | [`data/manifest.json`](data/manifest.json) | Which instruments actually have data. Generated; the app falls back to probing if it is missing. |
 | [`scripts/fetch-data.js`](scripts/fetch-data.js) | Prices from Tiingo, 1990→today, schema v1. Refuses to shrink a file. |
-| [`scripts/fetch-macro.js`](scripts/fetch-macro.js) | The deep index, risk-free rate and CPI. Keyless. |
-| [`scripts/verify-data.js`](scripts/verify-data.js) | Validation gate: shape, consistency, catalog agreement, staleness. |
+| [`scripts/fetch-macro.js`](scripts/fetch-macro.js) | The deep index, risk-free rate and CPI. Ken French is keyless; FRED goes through its API when `FRED_API_KEY` is set, its keyless CSV export otherwise. |
+| [`scripts/verify-data.js`](scripts/verify-data.js) | Validation gate: shape, consistency, catalog agreement, staleness. In CI, `--job` fails each workflow only on staleness in the files it refreshes. |
 | [`scripts/replay.mjs`](scripts/replay.mjs) | Golden scenarios + property tests. |
 | [`scripts/migrate-schema.js`](scripts/migrate-schema.js) | One-shot old→v1 migration. Idempotent. |
 | [`scripts/serve.mjs`](scripts/serve.mjs) | Local static server. |
@@ -125,7 +127,11 @@ gh secret set TIINGO_TOKEN
 gh workflow run "Refresh stock data"
 ```
 
-4. The macro series need no secret:
+4. The macro series need a free FRED API key ([fred.stlouisfed.org/docs/api/api_key.html](https://fred.stlouisfed.org/docs/api/api_key.html)). Without one the job falls back to FRED's keyless CSV export, which times out from GitHub's runners:
+
+```bash
+gh secret set FRED_API_KEY
+```
 
 ```bash
 gh workflow run "Refresh macro data"

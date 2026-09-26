@@ -38,8 +38,12 @@ jobs:
       # exiting 0 is not evidence the data is good; this reads what actually
       # landed on disk. It also writes data/manifest.json, so it must run
       # before the commit step.
+      #
+      # --job=stock: fail on staleness only in the prices this job fetches.
+      # A stale macro file is the macro job's to fail on. Failing on it here
+      # too is what deadlocked both jobs in September 2026.
       - name: Verify data
-        run: node scripts/verify-data.js
+        run: node scripts/verify-data.js --job=stock
 
       # Replaying the goldens here means a bad data refresh cannot silently
       # change what the site reports.
