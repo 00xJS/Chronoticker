@@ -21,12 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Fetch latest prices
         env:
@@ -42,8 +42,9 @@ jobs:
       # --job=stock: fail on staleness only in the prices this job fetches.
       # A stale macro file is the macro job's to fail on. Failing on it here
       # too is what deadlocked both jobs in September 2026.
+      # --strict: a catalog entry with no data file fails the run too.
       - name: Verify data
-        run: node scripts/verify-data.js --job=stock
+        run: node scripts/verify-data.js --strict --job=stock
 
       # Replaying the goldens here means a bad data refresh cannot silently
       # change what the site reports.

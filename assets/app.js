@@ -198,12 +198,11 @@ async function loadSeries(id) {
 /**
  * Which catalog instruments actually have a data file behind them.
  *
- * data/manifest.json is written by scripts/verify-data.js on every CI run,
- * so the normal path costs one small request. Probing all 41 instruments
- * instead would mean ~30 console 404s on first paint while the catalogue
- * is still ahead of the backfill, so the manifest is worth having — but it
- * is only an optimisation, and a missing or stale one falls back to
- * probing rather than hiding an instrument that is actually there.
+ * data/manifest.json is kept current by scripts/verify-data.js on every CI
+ * run, so the normal path costs one small request instead of probing all
+ * ~45 catalogue entries on first paint. It is only an optimisation, and a
+ * missing or stale one falls back to probing rather than hiding an
+ * instrument that is actually there.
  */
 async function availableInstruments() {
     try {

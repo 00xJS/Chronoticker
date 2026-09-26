@@ -24,12 +24,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Fetch macro series
         env:
@@ -41,8 +41,9 @@ jobs:
 
       # --job=macro: fail on staleness only in the three files this job
       # builds. Stale prices are the stock job's to fail on.
+      # --strict: a catalog entry with no data file fails the run too.
       - name: Verify data
-        run: node scripts/verify-data.js --job=macro
+        run: node scripts/verify-data.js --strict --job=macro
 
       - name: Replay goldens
         run: node scripts/replay.mjs
