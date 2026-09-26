@@ -929,7 +929,7 @@ function finishStatus(list, aligned, elapsed) {
  */
 function staleInstruments(list) {
     const now = Date.now();
-    const budget = id => (id === 'USMKT' || id === 'CPI') ? 75 : (id === 'RF' ? 45 : 7);
+    const budget = id => id === 'CPI' ? 100 : (id === 'USMKT' || id === 'RF') ? 75 : 7;
     // The macro series are loaded separately from the portfolio's holdings, so
     // they never appeared in `list` and their generous budgets were dead code.
     // A stalled Ken French / FRED refresh is exactly the silent failure this

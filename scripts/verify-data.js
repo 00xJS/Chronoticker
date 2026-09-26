@@ -6,12 +6,10 @@
 //   node scripts/verify-data.js
 //   node scripts/verify-data.js --strict
 //
-// NOT YET WIRED INTO CI. As of this writing the only workflow is
-// .github/workflows/refresh-data.yml, and it runs fetch-data.js and then
-// commits data/ unconditionally — it never invokes this script, and there is
-// no standalone PR check. Until a `node scripts/verify-data.js` step is added
-// after the fetch (and before the commit), this gate only catches what
-// somebody runs by hand.
+// Run in CI by both scheduled workflows, after their fetch and before their
+// commit, each naming itself with --job:
+//   node scripts/verify-data.js --job=stock     (refresh-data.yml)
+//   node scripts/verify-data.js --job=macro     (refresh-macro.yml)
 //
 // WHY this exists: "the fetch script exited 0" is not evidence that the
 // data is good. The June 2026 outage is the proof — the nightly job kept
@@ -46,6 +44,20 @@
 // are not optional extras: data/USMKT.json is the century of market history
 // the whole deep-history feature reads, and before this it could be deleted
 // with --strict still green.
+//
+// --job=<stock|macro> scopes the staleness checks to the files that job
+// refreshes (see JOB_SOURCES). Both workflows gate their commit on this
+// script, and until September 2026 each one failed on ANY stale file. That
+// deadlocked the pair: FRED stopped answering GitHub runners, the CPI aged
+// out of its budget on 2026-09-15, and the stock job — which cannot refresh
+// the CPI — refused to commit a good night of prices, night after night. By
+// the next weekly macro run those prices were stale too, so the macro job
+// refused as well, and neither could ever pass on its own again. A job can
+// only fix the files it fetches, so under --job a stale or frozen file that
+// belongs to the OTHER job is a ⚠ here, and stays a ✗ in that job's own run.
+// Structural failures stay ✗ for every file whichever job runs — those
+// describe a broken site. Without --job nothing is scoped, so a local run
+// still fails on every stale file.
 //
 // Requires Node 18+. Zero external dependencies.
 
@@ -99,7 +111,22 @@ const STALE_EXEMPT = {
     // RF then ends at Ken French's monthly date like USMKT does. Budgeting for
     // the tail meant a failed tail became a failed data gate a fortnight later.
     RF:    { days: 75, why: 'Ken French monthly cadence; the daily FRED DTB3 tail is best-effort' },
-    CPI:   { days: 75, why: 'FRED publishes CPIAUCNS monthly, a few weeks in arrears' },
+    // 75 was Ken French's budget, copied across, and it does not fit the CPI.
+    // FRED stamps each print on the FIRST of its month and BLS releases it
+    // around the 10th-15th of the month after, so on the eve of a release the
+    // newest print is already 68-76 days old — before the weekly macro job
+    // has taken up to six more days to collect it. 100 absorbs that and one
+    // missed weekly run; a month that never arrives still fails.
+    CPI:   { days: 100, why: 'monthly, stamped on the 1st and released mid-way through the next month — up to ~76 days old before the next print' },
+};
+
+// Which files each scheduled job refreshes, keyed by the catalog `source`
+// the fetch scripts themselves select on: fetch-data.js takes 'tiingo'
+// (refresh-data.yml), and fetch-macro.js produces exactly these three
+// (refresh-macro.yml). Only --job reads this; see the header for why.
+const JOB_SOURCES = {
+    stock: ['tiingo'],
+    macro: ['ken-french', 'ken-french + fred:DTB3', 'fred:CPIAUCNS'],
 };
 
 // The staleness clock above only reads the DATE axis, so it is blind to the
@@ -229,6 +256,30 @@ function readCatalog(catalog) {
     }
 
     return { entries, problems };
+}
+
+// The job that refreshes a catalog entry, or null when none does. Read off
+// the CATALOG rather than the file: a file's own `source` is one of the
+// things this gate checks, so it cannot also decide how strictly it is
+// checked.
+function ownerOf(entry) {
+    if (!entry) return null;
+    for (const [job, sources] of Object.entries(JOB_SOURCES)) {
+        if (sources.includes(entry.source)) return job;
+    }
+    return null;
+}
+
+// Under --job, move a stale or frozen verdict on another job's file from ✗
+// to ⚠. Moved, not dropped, so it still prints on every run. Only called
+// for a file with a known owner: an unowned file is never deferred, because
+// leniency here is granted by name, the same rule as STALE_EXEMPT.
+function deferToOwner(result, owner) {
+    const theirs = result.fails.filter(f => f.startsWith('stale:') || f.startsWith('frozen:'));
+    if (!theirs.length) return false;
+    result.fails = result.fails.filter(f => !theirs.includes(f));
+    result.warns.unshift(...theirs.map(f => `${f} [the ${owner} job refreshes this file and fails on it; not this job's to fix]`));
+    return true;
 }
 
 // ── Per-file validation ─────────────────────────────────────────────
@@ -464,9 +515,16 @@ function printTable(results) {
 async function main() {
     const args   = process.argv.slice(2);
     const strict = args.includes('--strict');
-    const unknown = args.filter(a => a !== '--strict');
+    const jobArg = args.find(a => a.startsWith('--job='));
+    const job    = jobArg ? jobArg.slice('--job='.length) : null;
+    const unknown = args.filter(a => a !== '--strict' && a !== jobArg);
+    const usage  = `Usage: node scripts/verify-data.js [--strict] [--job=${Object.keys(JOB_SOURCES).join('|')}]`;
     if (unknown.length) {
-        console.error(`Unknown argument(s): ${unknown.join(' ')}\nUsage: node scripts/verify-data.js [--strict]`);
+        console.error(`Unknown argument(s): ${unknown.join(' ')}\n${usage}`);
+        process.exit(1);
+    }
+    if (jobArg && !Object.hasOwn(JOB_SOURCES, job)) {
+        console.error(`Unknown job "${job}"\n${usage}`);
         process.exit(1);
     }
 
@@ -488,9 +546,11 @@ async function main() {
         .sort();
 
     console.log(`Chronoticker data gate — ${pluralize(files.length, 'data file')}, ` +
-                `${catalog.size} catalog entries, today ${ymd(today)} (UTC)\n`);
+                `${catalog.size} catalog entries, today ${ymd(today)} (UTC)` +
+                `${job ? `, ${job} job` : ''}\n`);
 
-    const results = [];
+    const results  = [];
+    const deferred = [];
     for (const file of files) {
         const id = path.basename(file, '.json');
         let json;
@@ -501,8 +561,11 @@ async function main() {
                            fails: [`unreadable: ${err.message}`], warns: [] });
             continue;
         }
-        const result = verifyFile(file, json, catalog.get(id) || null, today);
+        const entry  = catalog.get(id) || null;
+        const result = verifyFile(file, json, entry, today);
         if (!catalog.has(id)) result.warns.push(`orphan: no entry with id "${id}" in ${CATALOG_FILE}`);
+        const owner  = ownerOf(entry);
+        if (job && owner && owner !== job && deferToOwner(result, owner)) deferred.push(id);
         results.push(result);
     }
 
@@ -597,6 +660,10 @@ async function main() {
         const applied = results.find(r => r.row.id === id && r.row.staleRule);
         console.log(`  ${id.padEnd(6)} ${String(rule.days).padStart(3)}d  ${rule.why}${applied ? '' : '  (no data file yet)'}`);
     }
+    if (job) {
+        console.log(`Scoped to the ${job} job: a stale or frozen file that another job refreshes is ⚠ here ` +
+                    `and ✗ in that job's run.`);
+    }
 
     // -- summary. Every ✗ is named, so the exit code never needs decoding.
     const passed  = results.length - failed.length - warned.length;
@@ -621,7 +688,16 @@ async function main() {
                 // deleted USMKT.json in the same total.
                 (derivedMissing.length ? `${derivedMissing.length} derived missing${strict ? ' ✗' : ' ⚠'}, ` : '') +
                 `${orphans} orphan ⚠`);
-    console.log(reasons.length ? `✗ FAIL — ${reasons.join('; ')}.` : '✓ PASS — every check green.');
+    console.log(reasons.length ? `✗ FAIL — ${reasons.join('; ')}.`
+                : deferred.length ? `✓ PASS — every check this job owns is green.`
+                : '✓ PASS — every check green.');
+    // Said on its own line, pass or fail, so a deferred file can never read
+    // as healthy just because this job was not the one to fail on it.
+    if (deferred.length) {
+        console.log(`⚠ ${pluralize(deferred.length, 'file')} this job does not refresh ` +
+                    `${deferred.length === 1 ? 'is' : 'are'} stale or frozen (${summarise(deferred)}) — ` +
+                    `✗ in the owning job's run, not here.`);
+    }
 
     if (reasons.length) process.exit(1);
 }

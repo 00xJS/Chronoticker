@@ -3,8 +3,9 @@
 // feed cannot supply: a US total-market total-return index back to 1926,
 // the matching risk-free rate, and the CPI used to deflate to real terms.
 //
-// Run locally or in CI — no token, no secret, no dependencies:
+// Run locally or in CI — no dependencies, and no secret required:
 //   node scripts/fetch-macro.js
+//   FRED_API_KEY=... node scripts/fetch-macro.js     (FRED through its API)
 //
 // Writes data/USMKT.json, data/RF.json, data/CPI.json (schema v1).
 //
@@ -21,11 +22,12 @@
 //      indices themselves are licensed; every free vendor API (Tiingo,
 //      Yahoo, Stooq) starts in the ETF era at best — SPY begins 1993,
 //      VTI 2001 — so none of them can show 1929 or 1973 at all.
-//   2. FRED (fredgraph.csv) — keyless CSV export. Used for the DTB3
-//      3-month bill to carry the risk-free rate across French's
-//      publication lag, and for CPIAUCNS. FRED is chosen over BLS's own
-//      API because the BLS API requires a registered key for anything
-//      beyond a rate-limited anonymous tier.
+//   2. FRED — used for the DTB3 3-month bill to carry the risk-free rate
+//      across French's publication lag, and for CPIAUCNS. FRED is chosen
+//      over BLS's own API because the BLS API requires a registered key for
+//      anything beyond a rate-limited anonymous tier. Read through FRED's
+//      API when FRED_API_KEY is set, which is how CI runs it (see
+//      FRED_API_URL), and through the keyless fredgraph.csv export otherwise.
 //
 // The Ken French file arrives as a ZIP. Unzipping it with zero
 // dependencies means parsing the container by hand — see readZipEntries
@@ -77,6 +79,19 @@ const CATALOG     = path.join(DATA_DIR, 'catalog.json');
 
 const FRENCH_URL  = 'https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip';
 const FRED_URL    = id => `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(id)}`;
+
+// The same observations through FRED's API. fredgraph.csv above is the
+// website's chart download, and since mid-August 2026 it has timed out from
+// GitHub-hosted runners on every run while answering a laptop in well under
+// a second — the datacenter-IP treatment that already pushed the price feed
+// from Stooq and Yahoo to Tiingo. The API is FRED's sanctioned route for
+// scripts and takes a free key (https://fred.stlouisfed.org/docs/api/api_key.html),
+// stored as the FRED_API_KEY repo secret. With no key set the CSV export is
+// used, so a local run stays keyless.
+const FRED_API_KEY = process.env.FRED_API_KEY || '';
+const FRED_API_URL = id => 'https://api.stlouisfed.org/fred/series/observations' +
+                           `?series_id=${encodeURIComponent(id)}&file_type=json` +
+                           `&api_key=${encodeURIComponent(FRED_API_KEY)}`;
 
 const DAY = 86400;
 
@@ -342,35 +357,61 @@ async function fetchFrench() {
     return rows;
 }
 
-// ── Source 2: FRED keyless CSV ───────────────────────────────────────
+// ── Source 2: FRED ───────────────────────────────────────────────────
+
+// Both routes come down to the same [date, value-as-text] pairs, so the
+// parsing in fetchFred — and every rule about unobserved dates — is shared.
+async function fredPairs(id) {
+    const label = `fred:${id}`;
+    if (FRED_API_KEY) {
+        const text = await fetchText(FRED_API_URL(id), label, FRED_TIMEOUT_MS);
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch {
+            throw new Error(`${label}: API answered with something other than JSON: "${snippet(text, 80)}"`);
+        }
+        if (!Array.isArray(json && json.observations)) {
+            throw new Error(`${label}: API response has no observations array`);
+        }
+        return json.observations.map(o => [o && o.date, o && o.value]);
+    }
+
+    const lines = (await fetchText(FRED_URL(id), label, FRED_TIMEOUT_MS)).split(/\r?\n/).filter(Boolean);
+    if (!lines.length) throw new Error(`${label}: empty CSV`);
+
+    const header = lines[0].trim();
+    if (header !== `observation_date,${id}`) {
+        throw new Error(`${label}: unexpected header "${snippet(header, 80)}"`);
+    }
+    return lines.slice(1).map(line => line.split(','));
+}
 
 async function fetchFred(id) {
     if (fredDown) throw new Error(`fred:${id}: skipped — FRED already unreachable this run (${fredDown})`);
-    process.stdout.write(`Fetching FRED ${id}... `);
-    let text;
+    process.stdout.write(`Fetching FRED ${id}${FRED_API_KEY ? ' (API)' : ''}... `);
+    let pairs;
     try {
-        text = await fetchText(FRED_URL(id), `fred:${id}`, FRED_TIMEOUT_MS);
+        pairs = await fredPairs(id);
     } catch (err) {
         // Transport failure means the host is refusing us, not that this
         // particular series is broken. Trip the breaker so the next one
         // fails instantly instead of spending another three timeouts.
         if (/timed out|fetch failed|ECONN|socket/i.test(err.message)) fredDown = err.message;
+        // The API answers a missing, mistyped or revoked key with a 400,
+        // which on its own reads like a bad URL. Name the knob to turn.
+        if (FRED_API_KEY && /HTTP 40[0-3]\b/.test(err.message)) {
+            throw new Error(`${err.message} — FRED refused the request; check the FRED_API_KEY secret`);
+        }
         throw err;
-    }
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    if (!lines.length) throw new Error(`fred:${id}: empty CSV`);
-
-    const header = lines[0].trim();
-    if (header !== `observation_date,${id}`) {
-        throw new Error(`fred:${id}: unexpected header "${snippet(header, 80)}"`);
     }
 
     const rows    = [];
     const skipped = [];
-    for (const line of lines.slice(1)) {
-        const [date, raw] = line.split(',');
-        if (!/^\d{4}-\d{2}-\d{2}$/.test((date || '').trim())) {
-            throw new Error(`fred:${id}: unparseable date in row "${snippet(line, 80)}"`);
+    for (const [date, raw] of pairs) {
+        const d = String(date ?? '').trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+            throw new Error(`fred:${id}: unparseable date in row "${snippet(`${date},${raw}`, 80)}"`);
         }
         // FRED emits a row for every date on the series' calendar and
         // leaves the value blank where there is no observation. The
@@ -378,13 +419,13 @@ async function fetchFred(id) {
         // empty field instead (DTB3 has ~800 of them, one per market
         // holiday), so accept both. Skip these — never zero-fill, and
         // never carry the previous value forward.
-        const v = (raw || '').trim();
-        if (v === '.' || v === '') { skipped.push(date.trim()); continue; }
+        const v = String(raw ?? '').trim();
+        if (v === '.' || v === '') { skipped.push(d); continue; }
         const value = parseFloat(v);
         if (!Number.isFinite(value)) {
-            throw new Error(`fred:${id}: unparseable value in row "${snippet(line, 80)}"`);
+            throw new Error(`fred:${id}: unparseable value in row "${snippet(`${date},${raw}`, 80)}"`);
         }
-        rows.push({ t: isoToTimestamp(date.trim()), value });
+        rows.push({ t: isoToTimestamp(d), value });
     }
     if (!rows.length) throw new Error(`fred:${id}: no usable observations`);
 
@@ -910,10 +951,13 @@ async function main() {
     // A run that could not reach FRED at all still succeeded at its main job,
     // but say so plainly rather than letting a green tick imply everything
     // landed. If this becomes the norm, the CPI will age out of the data
-    // gate's 75-day budget and that failure is the one worth acting on.
+    // gate's budget (STALE_EXEMPT in verify-data.js) and that failure is the
+    // one worth acting on.
     if (dtb3Failed || cpiFailed) {
-        console.log(`\n! FRED was unreachable from this machine. USMKT and RF are current; ` +
-                    `anything sourced from FRED was preserved rather than refreshed.`);
+        console.log(`\n! FRED could not be read this run. USMKT and RF are current; ` +
+                    `anything sourced from FRED was preserved rather than refreshed.` +
+                    (FRED_API_KEY ? '' : ' No FRED_API_KEY was set, so this used the keyless CSV ' +
+                                         'export, which GitHub runners cannot reach — see FRED_API_URL.'));
     }
 }
 
