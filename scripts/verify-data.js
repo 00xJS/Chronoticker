@@ -8,8 +8,8 @@
 //
 // Run in CI by both scheduled workflows, after their fetch and before their
 // commit, each naming itself with --job:
-//   node scripts/verify-data.js --job=stock     (refresh-data.yml)
-//   node scripts/verify-data.js --job=macro     (refresh-macro.yml)
+//   node scripts/verify-data.js --strict --job=stock     (refresh-data.yml)
+//   node scripts/verify-data.js --strict --job=macro     (refresh-macro.yml)
 //
 // WHY this exists: "the fetch script exited 0" is not evidence that the
 // data is good. The June 2026 outage is the proof — the nightly job kept
@@ -35,10 +35,10 @@
 //             1 = at least one ✗.
 //
 // --strict promotes MISSING data files from ⚠ to ✗, derived ones included.
-// Off by default because the catalog was just expanded and most of its
-// entries have never been fetched; a permanently red check for known-absent
-// symbols is a check everyone learns to ignore. Turn it on once the backfill
-// has landed. Derived entries are listed separately because they are
+// Both workflows run with it. It stayed off while the catalog was ahead of
+// the backfill — a permanently red check for known-absent symbols is a check
+// everyone learns to ignore — and went on in CI once every entry had a file
+// (September 2026). Derived entries are listed separately because they are
 // legitimately absent in a fresh clone — the macro workflow, not the fetch,
 // produces them — but under --strict they fail exactly like the rest. They
 // are not optional extras: data/USMKT.json is the century of market history
@@ -650,8 +650,22 @@ async function main() {
         present: results.filter(r => r.fails.every(f => f.startsWith('stale:') || f.startsWith('frozen:'))).map(r => r.row.id).sort(),
         missing: missing.slice().sort(),
     };
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-    console.log(`\nWrote data/manifest.json — ${manifest.present.length} instrument(s) offered to the app.`);
+    // Rewritten only when what it says changes. Both workflows commit
+    // data/*.json, so a fresh `generated` stamp on every run was a commit and
+    // a site redeploy on every day without a new close — 9 of 30 stock
+    // refreshes in September 2026. The rule fetch-data.js already applies to
+    // the price files: a rewrite is not a refresh.
+    let previous = null;
+    try {
+        previous = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+    } catch { /* none yet, or unreadable: write a fresh one */ }
+    const says = m => JSON.stringify([m.note, m.present, m.missing]);
+    if (previous && says(previous) === says(manifest)) {
+        console.log(`\ndata/manifest.json unchanged — ${manifest.present.length} instrument(s) offered to the app.`);
+    } else {
+        await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+        console.log(`\nWrote data/manifest.json — ${manifest.present.length} instrument(s) offered to the app.`);
+    }
 
     // -- staleness policy, said out loud
     console.log(`\nStaleness policy: ${STALE_DAYS} days for every file. The budget is never widened by ` +

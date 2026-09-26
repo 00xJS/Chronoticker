@@ -227,9 +227,8 @@ async function fetchBufferOnce(url, label, timeoutMs = REQUEST_TIMEOUT_MS) {
     } catch (err) {
         // Node 22+ rejects with the signal's reason (a TimeoutError);
         // Node 20 wraps it in an AbortError and hangs the TimeoutError off
-        // .cause. CI is on 20 and dev machines are not, so match both —
-        // otherwise a timeout reads as a bare "This operation was aborted"
-        // on exactly the platform the scheduled job runs on.
+        // .cause. Match both, so a timeout never reads as a bare "This
+        // operation was aborted" on whichever Node the script runs on.
         if (err.name === 'TimeoutError' || err.cause?.name === 'TimeoutError') {
             throw new Error(`${label}: timed out after ${timeoutMs / 1000}s`);
         }

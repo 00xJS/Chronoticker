@@ -121,7 +121,7 @@ node scripts/verify-data.js
 gh secret set TIINGO_TOKEN
 ```
 
-3. Backfill. The catalog lists ~41 instruments and only 12 have ever been fetched, so the first run pulls a lot:
+3. Refresh the prices. Every instrument's history is already committed, so this only brings it up to date:
 
 ```bash
 gh workflow run "Refresh stock data"
